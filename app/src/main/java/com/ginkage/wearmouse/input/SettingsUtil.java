@@ -40,7 +40,8 @@ public class SettingsUtil {
         SettingKey.CURSOR_8_WAY,
         SettingKey.REDUCED_RATE,
         SettingKey.STABILIZE,
-        SettingKey.STAY_CONNECTED
+        SettingKey.STAY_CONNECTED,
+        SettingKey.TAP_TO_CLICK
     })
     public @interface SettingKey {
         String CALIBRATION = "pref_settingCalibration";
@@ -49,6 +50,7 @@ public class SettingsUtil {
         String REDUCED_RATE = "pref_settingReducedRate";
         String STABILIZE = "pref_settingStabilize";
         String STAY_CONNECTED = "pref_settingStayConnected";
+        String TAP_TO_CLICK = "pref_settingTapToClick";
     }
 
     private static final Map<String, Boolean> defaults =
@@ -58,6 +60,7 @@ public class SettingsUtil {
                     .put(SettingKey.REDUCED_RATE, false)
                     .put(SettingKey.STABILIZE, false)
                     .put(SettingKey.STAY_CONNECTED, false)
+                    .put(SettingKey.TAP_TO_CLICK, true)
                     .build();
 
     private final SharedPreferences sharedPref;

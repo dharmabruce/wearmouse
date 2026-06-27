@@ -48,6 +48,14 @@ public class MouseSensorListener implements SensorService.OrientationListener {
     private static final double CURSOR_SPEED = 1024.0 / (Math.PI / 4);
     private static final double STABILIZE_BIAS = 16.0;
 
+    /**
+     * Pixels of cursor motion per one mouse-wheel tick while in scroll-grab mode. The scroll is tied
+     * to the exact displacement the cursor <em>would</em> have moved, so scrolling inherits the
+     * cursor's feel; this only converts those pixels into the wheel's coarse unit. Lower scrolls
+     * faster (fewer pixels buys a tick). Tunable by feel.
+     */
+    private static final double SCROLL_PIXELS_PER_TICK = 50.0;
+
     static final class ButtonEvent {
         final @MouseButton int button;
         final boolean state;
@@ -84,6 +92,13 @@ public class MouseSensorListener implements SensorService.OrientationListener {
     private @HandMode int handMode;
     private boolean stabilize;
     private boolean lefty;
+
+    /** When true, wrist motion scrolls the wheel instead of moving the cursor (grab-to-scroll). */
+    private boolean scrollMode;
+    /** Total wheel ticks emitted during the current grab, used to tell a tap from a scroll. */
+    private double scrollAccum;
+    /** Smoothed wheel ticks per frame during the grab, used to seed release inertia. */
+    private double scrollVelocity;
 
     /** @param dataSender Interface to send Mouse data with. */
     MouseSensorListener(MouseDataSender dataSender) {
@@ -183,6 +198,35 @@ public class MouseSensorListener implements SensorService.OrientationListener {
     }
 
     /**
+     * Enter or leave scroll-grab mode. While on, vertical wrist motion is converted to wheel scroll
+     * and the cursor is frozen, as if the wrist had grabbed the page. Entering resets the per-grab
+     * scroll meters.
+     *
+     * @param on {@code true} to start grabbing, {@code false} to release.
+     */
+    void setScrollMode(boolean on) {
+        if (on && !scrollMode) {
+            scrollAccum = 0;
+            scrollVelocity = 0;
+            // Drop any pending rotation so the grab starts from a clean slate (no cursor jump and no
+            // stale pitch dumped into the first scroll frame).
+            dYaw = 0;
+            dPitch = 0;
+        }
+        scrollMode = on;
+    }
+
+    /** @return total wheel ticks scrolled since the current grab began (signed). */
+    double getScrollAccum() {
+        return scrollAccum;
+    }
+
+    /** @return smoothed wheel velocity (ticks/frame) at this moment, for seeding inertia. */
+    double getScrollVelocity() {
+        return scrollVelocity;
+    }
+
+    /**
      * Sets the current watch location: left/right wrist, or in the hand.
      *
      * @param hand Can be one of LEFT, CENTER, RIGHT.
@@ -240,6 +284,22 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      */
     private boolean sendCurrentState() {
         boolean overflow = false;
+
+        if (scrollMode) {
+            // Grab-to-scroll: vertical wrist motion drives the wheel, cursor is frozen. Tie the
+            // scroll to the exact displacement the cursor would have moved (in pixels), then convert
+            // to the coarse wheel unit, so it feels like the cursor is dragging the page. Negative
+            // sign so tilting the wrist the way you'd drag the page scrolls it that way.
+            double cursorPixels = dPitch * CURSOR_SPEED;
+            double wheelDelta = -cursorPixels / SCROLL_PIXELS_PER_TICK;
+            dWheel += wheelDelta;
+            scrollAccum += wheelDelta;
+            scrollVelocity = 0.6 * scrollVelocity + 0.4 * wheelDelta;
+            // Consume the rotation so it neither moves the cursor nor piles up for later.
+            dYaw = 0;
+            dPitch = 0;
+        }
+
         double dX = dYaw * CURSOR_SPEED;
         double dY = dPitch * CURSOR_SPEED;
         double dZ = dWheel;

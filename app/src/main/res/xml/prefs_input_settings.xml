@@ -17,6 +17,11 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     android:title="@string/pref_inputSettings">
     <SwitchPreference
+        android:key="pref_settingTapToClick"
+        android:title="@string/pref_settingTapToClick"
+        android:summary="@string/pref_settingTapToClick_summary"
+        android:persistent="false"/>
+    <SwitchPreference
         android:key="pref_settingCalibration"
         android:title="@string/pref_settingCalibration"
         android:summary="@string/pref_settingCalibration_summary"

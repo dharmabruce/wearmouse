@@ -54,6 +54,7 @@ public class InputSettingsFragment extends PreferenceFragment {
         onboardingRequest = new OnboardingRequest(getActivity(), ScreenKey.CALIBRATION);
         calibrationPref = (SwitchPreference) findPreference(SettingKey.CALIBRATION);
 
+        initBooleanPref(SettingKey.TAP_TO_CLICK);
         initBooleanPref(SettingKey.STABILIZE);
         initBooleanPref(SettingKey.CURSOR_8_WAY);
         initBooleanPref(SettingKey.REDUCED_RATE);

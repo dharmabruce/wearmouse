@@ -21,6 +21,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.view.MotionEvent;
 import android.view.Surface;
@@ -69,6 +71,7 @@ public class MouseController {
     private final HidDataSender hidDataSender;
     private final MouseSensorListener sensorListener;
     private final SensorServiceConnection connection;
+    private final TapDetector tapDetector;
 
     /**
      * @param context Activity this controller is bound to.
@@ -80,6 +83,20 @@ public class MouseController {
         this.hidDataSender = HidDataSender.getInstance();
         this.sensorListener = new MouseSensorListener(hidDataSender);
         this.connection = new SensorServiceConnection(context, this::onServiceConnected);
+        this.tapDetector =
+                new TapDetector(
+                        context,
+                        new TapDetector.PinchListener() {
+                            @Override
+                            public void onPinchDown() {
+                                handlePinchDown();
+                            }
+
+                            @Override
+                            public void onPinchUp() {
+                                handlePinchUp();
+                            }
+                        });
     }
 
     /**
@@ -99,6 +116,8 @@ public class MouseController {
 
     /** Should be called in the Activity's (or Fragment's) onStop() method. */
     public void onStop() {
+        tapDetector.stop();
+        pinchHandler.removeCallbacks(inertiaTick);
         connection.unbind();
     }
 
@@ -179,6 +198,10 @@ public class MouseController {
         sensorListener.setHand(settings.getMouseHand());
         sensorListener.setStabilize(settings.getBoolean(SettingKey.STABILIZE));
         service.startInput(sensorListener, settings.getBoolean(SettingKey.REDUCED_RATE));
+
+        if (settings.getBoolean(SettingKey.TAP_TO_CLICK) && tapDetector.isSupported()) {
+            tapDetector.start();
+        }
     }
 
     private boolean isLefty(Context context) {
@@ -191,5 +214,57 @@ public class MouseController {
 
     private void sendButtonEvent(int button, boolean state) {
         sensorListener.sendButtonEvent(button, state);
+    }
+
+    // --- Tap / grab-to-scroll ------------------------------------------------
+
+    /** Below this much accumulated scroll, a pinch is treated as a click rather than a scroll. */
+    private static final double CLICK_SCROLL_THRESHOLD = 2.0;
+
+    /** Inertia tick period and decay; momentum stops when speed falls below the floor. */
+    private static final long INERTIA_TICK_MS = 16;
+    private static final double INERTIA_DECAY = 0.9;
+    private static final double INERTIA_MIN = 0.3;
+
+    private final Handler pinchHandler = new Handler(Looper.getMainLooper());
+    private double inertiaVelocity;
+
+    private final Runnable inertiaTick =
+            new Runnable() {
+                @Override
+                public void run() {
+                    sensorListener.sendMouseMove(0, 0, inertiaVelocity);
+                    inertiaVelocity *= INERTIA_DECAY;
+                    if (Math.abs(inertiaVelocity) >= INERTIA_MIN) {
+                        pinchHandler.postDelayed(this, INERTIA_TICK_MS);
+                    }
+                }
+            };
+
+    @MainThread
+    private void handlePinchDown() {
+        // Stop any leftover momentum and grab the page: wrist motion now scrolls, cursor freezes.
+        pinchHandler.removeCallbacks(inertiaTick);
+        inertiaVelocity = 0;
+        sensorListener.setScrollMode(true);
+    }
+
+    @MainThread
+    private void handlePinchUp() {
+        final double scrolled = sensorListener.getScrollAccum();
+        final double velocity = sensorListener.getScrollVelocity();
+        sensorListener.setScrollMode(false);
+        if (Math.abs(scrolled) < CLICK_SCROLL_THRESHOLD) {
+            // Barely moved: it was a tap → a left click.
+            sendButtonEvent(MouseButton.LEFT, true);
+            sendButtonEvent(MouseButton.LEFT, false);
+        } else {
+            // It was a scroll: let it coast to a stop with macOS-style inertia.
+            inertiaVelocity = velocity;
+            pinchHandler.removeCallbacks(inertiaTick);
+            if (Math.abs(inertiaVelocity) >= INERTIA_MIN) {
+                pinchHandler.post(inertiaTick);
+            }
+        }
     }
 }

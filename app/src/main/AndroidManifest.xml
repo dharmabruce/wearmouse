@@ -88,5 +88,12 @@
             android:exported="true"
             />
 
+        <!-- Debug-only IMU recorder. Not in any menu; launch via:
+             adb shell am start -n com.ginkage.wearmouse/.ui.RecorderActivity -->
+        <activity
+            android:name=".ui.RecorderActivity"
+            android:exported="true"
+            />
+
     </application>
 </manifest>

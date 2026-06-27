@@ -120,6 +120,10 @@
     <string name="setting_recalibrate">Recalibrate sensors</string>
     <!-- Prompt for the user to wait while the gyroscope calibration is running [CHAR_LIMIT=24] -->
     <string name="setting_calibration_running">Calibrating\u2026</string>
+    <!-- Name of the preference for enabling finger-tap detection as a mouse click -->
+    <string name="pref_settingTapToClick">Tap to click</string>
+    <!-- Description of the preference for enabling finger-tap detection as a mouse click -->
+    <string name="pref_settingTapToClick_summary">Tap your fingers to click; hold to drag</string>
     <!-- Name of the preference for stabilizing mouse pointer movements -->
     <string name="pref_settingStabilize">Stabilize pointer movements</string>
     <!-- Description of the preference for stabilizing mouse pointer movements -->
