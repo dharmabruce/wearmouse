@@ -9,6 +9,23 @@ emulation on a Wear OS device.
 
 Note: This is not an officially supported Google product.
 
+## Fork additions
+
+This fork extends the upstream air mouse for hands-light use with AR glasses (tested on
+the INMO Air 3) driven from a Wear OS watch:
+
+* **IMU tap-to-click and grab-to-scroll** — pinch to click, pinch-and-move to scroll, with
+  macOS-style release inertia. No touching the watch face to click.
+* **Android Back and Home** — two entries in the mouse action drawer (swipe up) send the
+  Android navigation keys over HID (Consumer Control `AC Back`/`AC Home`), so you can
+  navigate the glasses without leaving the air mouse.
+* **Pause pointer** — a one-tap mute in the same drawer that freezes all pointer motion,
+  scrolling and clicks while you type on the host, then resumes instantly. The Bluetooth
+  link stays up, so there is no reconnect delay (unlike disconnecting).
+* **Per-device scroll direction** — the "Reverse scroll direction" setting is remembered
+  per connected host, so the glasses and a laptop can each keep the direction that feels
+  right; the global switch is the default new devices inherit.
+
 ## Compatibility
 
 This app is only compatible with Wear OS devices running Android P and above.

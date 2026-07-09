@@ -17,6 +17,7 @@
 package com.ginkage.wearmouse.ui.input;
 
 import android.app.Activity;
+import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.StrictMode;
@@ -24,6 +25,7 @@ import android.preference.Preference;
 import android.preference.PreferenceFragment;
 import android.preference.SwitchPreference;
 import com.ginkage.wearmouse.R;
+import com.ginkage.wearmouse.bluetooth.HidDataSender;
 import com.ginkage.wearmouse.input.SettingsUtil;
 import com.ginkage.wearmouse.input.SettingsUtil.SettingKey;
 import com.ginkage.wearmouse.ui.onboarding.OnboardingController;
@@ -55,6 +57,7 @@ public class InputSettingsFragment extends PreferenceFragment {
         calibrationPref = (SwitchPreference) findPreference(SettingKey.CALIBRATION);
 
         initBooleanPref(SettingKey.TAP_TO_CLICK);
+        initReverseScrollPref();
         initBooleanPref(SettingKey.STABILIZE);
         initBooleanPref(SettingKey.CURSOR_8_WAY);
         initBooleanPref(SettingKey.REDUCED_RATE);
@@ -85,6 +88,25 @@ public class InputSettingsFragment extends PreferenceFragment {
     public void onResume() {
         super.onResume();
         getView().requestFocus();
+    }
+
+    /**
+     * The scroll-direction switch is scoped to whichever device is connected right now, so each host
+     * (a phone, the glasses, a laptop) keeps its own preference. Settings is only reachable after a
+     * device is connected, so there is normally an address to key on; if not, it edits the global
+     * default that new devices inherit.
+     */
+    private void initReverseScrollPref() {
+        final BluetoothDevice device = HidDataSender.getInstance().getConnectedDevice();
+        final String address = (device != null) ? device.getAddress() : null;
+        final SwitchPreference pref =
+                (SwitchPreference) findPreference(SettingKey.REVERSE_SCROLL);
+        pref.setChecked(settings.getReverseScroll(address));
+        pref.setOnPreferenceChangeListener(
+                (p, newVal) -> {
+                    settings.setReverseScroll(address, (Boolean) newVal);
+                    return true;
+                });
     }
 
     private void initBooleanPref(@SettingKey final String key) {

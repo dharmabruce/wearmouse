@@ -27,6 +27,7 @@ import android.provider.Settings;
 import android.view.MotionEvent;
 import android.view.Surface;
 import androidx.annotation.MainThread;
+import androidx.annotation.Nullable;
 import com.ginkage.wearmouse.bluetooth.HidDataSender;
 import com.ginkage.wearmouse.input.MouseSensorListener.HandMode;
 import com.ginkage.wearmouse.input.MouseSensorListener.MouseButton;
@@ -172,6 +173,43 @@ public class MouseController {
         sendButtonEvent(MouseButton.MIDDLE, false);
     }
 
+    /** Taps the Android "Back" navigation button (Consumer Control AC Back → KEYCODE_BACK). */
+    public void pressBack() {
+        hidDataSender.sendConsumer(false, true);
+        hidDataSender.sendConsumer(false, false);
+    }
+
+    /** Taps the Android "Home" navigation button (Consumer Control AC Home → KEYCODE_HOME). */
+    public void pressHome() {
+        hidDataSender.sendConsumer(true, false);
+        hidDataSender.sendConsumer(false, false);
+    }
+
+    /**
+     * Toggle the pointer mute — a quick "stop the mouse wandering while I type" switch. Freezes all
+     * sensor-driven input and parks the pinch detector; the HID link stays up so resuming is instant.
+     *
+     * @return {@code true} if the pointer is now muted, {@code false} if it resumed.
+     */
+    public boolean togglePause() {
+        setPaused(!sensorListener.isPaused());
+        return sensorListener.isPaused();
+    }
+
+    /** @return whether the pointer is currently muted. */
+    public boolean isPaused() {
+        return sensorListener.isPaused();
+    }
+
+    private void setPaused(boolean paused) {
+        sensorListener.setPaused(paused);
+        if (paused) {
+            tapDetector.stop();
+        } else if (settings.getBoolean(SettingKey.TAP_TO_CLICK) && tapDetector.isSupported()) {
+            tapDetector.start();
+        }
+    }
+
     /**
      * Sets the current watch location.
      *
@@ -197,11 +235,17 @@ public class MouseController {
         sensorListener.setLefty(isLefty(service.getApplicationContext()));
         sensorListener.setHand(settings.getMouseHand());
         sensorListener.setStabilize(settings.getBoolean(SettingKey.STABILIZE));
+        sensorListener.setReverseScroll(settings.getReverseScroll(getConnectedDeviceAddress()));
         service.startInput(sensorListener, settings.getBoolean(SettingKey.REDUCED_RATE));
 
         if (settings.getBoolean(SettingKey.TAP_TO_CLICK) && tapDetector.isSupported()) {
             tapDetector.start();
         }
+    }
+
+    private @Nullable String getConnectedDeviceAddress() {
+        BluetoothDevice device = hidDataSender.getConnectedDevice();
+        return (device != null) ? device.getAddress() : null;
     }
 
     private boolean isLefty(Context context) {

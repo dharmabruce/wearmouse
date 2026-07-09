@@ -81,6 +81,14 @@
     <string name="right_click_hold">Right click and hold</string>
     <!-- Name of the extra option to click the middle mouse button -->
     <string name="middle_click">Middle click</string>
+    <!-- Name of the action-drawer option that sends the Android Back navigation key -->
+    <string name="menu_back">Back</string>
+    <!-- Name of the action-drawer option that sends the Android Home navigation key -->
+    <string name="menu_home">Home</string>
+    <!-- Name of the action-drawer option that mutes the pointer so you can type without interference -->
+    <string name="pause_pointer">Pause pointer</string>
+    <!-- Name of the action-drawer option shown while muted, to resume pointer control -->
+    <string name="resume_pointer">Resume pointer</string>
     <!-- Hint for the users about the way they can navigate in the mouse emulation mode (3 lines) -->
     <string name="tap_to_click">Wave your hand to move pointer\nTap button to click\nPull from the top to switch hand</string>
     <!-- Name of the left wrist mode (2 lines) -->
@@ -124,6 +132,10 @@
     <string name="pref_settingTapToClick">Tap to click</string>
     <!-- Description of the preference for enabling finger-tap detection as a mouse click -->
     <string name="pref_settingTapToClick_summary">Tap your fingers to click; hold to drag</string>
+    <!-- Name of the preference for reversing the grab-to-scroll direction -->
+    <string name="pref_settingReverseScroll">Reverse scroll direction</string>
+    <!-- Description of the preference for reversing the grab-to-scroll direction -->
+    <string name="pref_settingReverseScroll_summary">For natural scrolling, where the page follows your wrist</string>
     <!-- Name of the preference for stabilizing mouse pointer movements -->
     <string name="pref_settingStabilize">Stabilize pointer movements</string>
     <!-- Description of the preference for stabilizing mouse pointer movements -->

@@ -36,7 +36,9 @@ import javax.annotation.concurrent.GuardedBy;
 
 /** Central point for enabling the HID SDP record and sending all data. */
 public class HidDataSender
-        implements MouseReport.MouseDataSender, KeyboardReport.KeyboardDataSender {
+        implements MouseReport.MouseDataSender,
+                KeyboardReport.KeyboardDataSender,
+                ConsumerReport.ConsumerDataSender {
 
     private static final String TAG = "HidDataSender";
 
@@ -173,6 +175,19 @@ public class HidDataSender
     }
 
     /**
+     * The HID Host we are currently sending data to, if any. Used to scope per-device settings (e.g.
+     * scroll direction) to whichever device is connected right now.
+     *
+     * @return Connected device, or {@code null} if none.
+     */
+    @Nullable
+    public BluetoothDevice getConnectedDevice() {
+        synchronized (lock) {
+            return connectedDevice;
+        }
+    }
+
+    /**
      * Initiate connection sequence for the specified HID Host. If another device is already
      * connected, it will be disconnected first. If the parameter is {@code null}, then the service
      * will only disconnect from the current device.
@@ -216,6 +231,16 @@ public class HidDataSender
         synchronized (lock) {
             if (connectedDevice != null) {
                 hidDeviceApp.sendKeyboard(modifier, key1, key2, key3, key4, key5, key6);
+            }
+        }
+    }
+
+    @Override
+    @WorkerThread
+    public void sendConsumer(boolean home, boolean back) {
+        synchronized (lock) {
+            if (connectedDevice != null) {
+                hidDeviceApp.sendConsumer(home, back);
             }
         }
     }

@@ -33,6 +33,7 @@ import javax.annotation.Nullable;
 public class HidDeviceApp
         implements MouseReport.MouseDataSender,
                 KeyboardReport.KeyboardDataSender,
+                ConsumerReport.ConsumerDataSender,
                 BatteryReport.BatteryDataSender {
 
     private static final String TAG = "HidDeviceApp";
@@ -55,6 +56,7 @@ public class HidDeviceApp
 
     private final MouseReport mouseReport = new MouseReport();
     private final KeyboardReport keyboardReport = new KeyboardReport();
+    private final ConsumerReport consumerReport = new ConsumerReport();
     private final BatteryReport batteryReport = new BatteryReport();
     private final Handler mainThreadHandler = new Handler(Looper.getMainLooper());
 
@@ -190,6 +192,16 @@ public class HidDeviceApp
     }
 
     @Override
+    @WorkerThread
+    public void sendConsumer(boolean home, boolean back) {
+        // Store the current values in case the host will try to read them with a GET_REPORT call.
+        byte[] report = consumerReport.setValue(home, back);
+        if (inputHost != null && device != null) {
+            inputHost.sendReport(device, Constants.ID_CONSUMER, report);
+        }
+    }
+
+    @Override
     @MainThread
     public void sendBatteryLevel(float level) {
         // Store the current values in case the host will try to read them with a GET_REPORT call.
@@ -239,6 +251,9 @@ public class HidDeviceApp
 
             case Constants.ID_MOUSE:
                 return mouseReport.getReport();
+
+            case Constants.ID_CONSUMER:
+                return consumerReport.getReport();
 
             case Constants.ID_BATTERY:
                 return batteryReport.getReport();

@@ -56,6 +56,15 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      */
     private static final double SCROLL_PIXELS_PER_TICK = 50.0;
 
+    /**
+     * Low-pass weight on the previous frame's wheel rate (0..1) while grabbing. The 8-bit wheel can
+     * only emit whole ticks, so a noisy per-frame rate comes out as bursty single ticks that the
+     * host's own scroll acceleration then amplifies into visible jumps. Smoothing the rate spreads
+     * those ticks evenly. At the 50–89 Hz orientation rate this is only a ~20–40 ms time constant —
+     * enough to kill tremor without perceptible lag. Higher = smoother but laggier.
+     */
+    private static final double SCROLL_SMOOTHING = 0.6;
+
     static final class ButtonEvent {
         final @MouseButton int button;
         final boolean state;
@@ -92,12 +101,16 @@ public class MouseSensorListener implements SensorService.OrientationListener {
     private @HandMode int handMode;
     private boolean stabilize;
     private boolean lefty;
+    /** When true, flip the grab-to-scroll direction (natural scrolling). */
+    private boolean reverseScroll;
+    /** When true, drop all sensor-driven output (motion, scroll, clicks) — a pointer "mute". */
+    private boolean paused;
 
     /** When true, wrist motion scrolls the wheel instead of moving the cursor (grab-to-scroll). */
     private boolean scrollMode;
     /** Total wheel ticks emitted during the current grab, used to tell a tap from a scroll. */
     private double scrollAccum;
-    /** Smoothed wheel ticks per frame during the grab, used to seed release inertia. */
+    /** Smoothed wheel ticks per frame; drives both the live scroll output and the inertia seed. */
     private double scrollVelocity;
 
     /** @param dataSender Interface to send Mouse data with. */
@@ -107,6 +120,10 @@ public class MouseSensorListener implements SensorService.OrientationListener {
 
     @Override
     public void onOrientation(double[] quaternion) {
+        if (paused) {
+            // Muted: freeze the pointer. The next frame after resume re-seeds from rest (firstRead).
+            return;
+        }
         double q1 = quaternion[0]; // X * sin(T/2)
         double q2 = quaternion[1]; // Y * sin(T/2)
         double q3 = quaternion[2]; // Z * sin(T/2)
@@ -179,6 +196,9 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      * @param state {@code true} if the button is pressed, {@code false} otherwise.
      */
     void sendButtonEvent(@MouseButton int button, boolean state) {
+        if (paused) {
+            return;
+        }
         synchronized (pendingEvents) {
             pendingEvents.add(new ButtonEvent(button, state));
         }
@@ -192,6 +212,9 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      * @param wheel Extra Wheel rotation.
      */
     void sendMouseMove(double x, double y, double wheel) {
+        if (paused) {
+            return;
+        }
         dYaw += x / CURSOR_SPEED;
         dPitch += y / CURSOR_SPEED;
         dWheel += wheel;
@@ -254,6 +277,48 @@ public class MouseSensorListener implements SensorService.OrientationListener {
         lefty = isLefty;
     }
 
+    /**
+     * Sets the grab-to-scroll direction.
+     *
+     * @param reverse {@code true} to flip the scroll direction (natural scrolling), {@code false}
+     *     for the default where the wheel turns the way you'd push a physical wheel.
+     */
+    void setReverseScroll(boolean reverse) {
+        reverseScroll = reverse;
+    }
+
+    /**
+     * Pause or resume all sensor-driven output. While paused, wrist motion, grab-to-scroll and pinch
+     * clicks are dropped so the wearer can type on the host without the pointer wandering. The HID
+     * connection stays up, so resuming is instant. Entering pause discards any queued button events
+     * and releases anything held (so a mute can't leave a button stuck down); the first orientation
+     * after resume re-seeds from rest so the pointer doesn't jump.
+     *
+     * @param paused {@code true} to mute the pointer, {@code false} to resume.
+     */
+    void setPaused(boolean paused) {
+        if (paused && !this.paused) {
+            synchronized (pendingEvents) {
+                pendingEvents.clear();
+            }
+            if (leftButtonPressed || rightButtonPressed || middleButtonPressed) {
+                leftButtonPressed = false;
+                rightButtonPressed = false;
+                middleButtonPressed = false;
+                dataSender.sendMouse(false, false, false, 0, 0, 0);
+            }
+            scrollMode = false;
+        } else if (!paused && this.paused) {
+            firstRead = true;
+        }
+        this.paused = paused;
+    }
+
+    /** @return whether sensor-driven output is currently muted. */
+    boolean isPaused() {
+        return paused;
+    }
+
     private static double clamp(double val) {
         while (val <= -Math.PI) {
             val += 2 * Math.PI;
@@ -291,10 +356,18 @@ public class MouseSensorListener implements SensorService.OrientationListener {
             // to the coarse wheel unit, so it feels like the cursor is dragging the page. Negative
             // sign so tilting the wrist the way you'd drag the page scrolls it that way.
             double cursorPixels = dPitch * CURSOR_SPEED;
-            double wheelDelta = -cursorPixels / SCROLL_PIXELS_PER_TICK;
+            // Default sign drags the page the way you tilt; reverseScroll flips it for natural
+            // scrolling, where the wheel turns the opposite way.
+            double direction = reverseScroll ? 1.0 : -1.0;
+            double rawWheel = direction * cursorPixels / SCROLL_PIXELS_PER_TICK;
+            // Low-pass the wheel rate so tremor and single-frame spikes don't become bursty single
+            // ticks. The same smoothed value drives the live scroll and seeds the release inertia,
+            // so the hand-off coasts seamlessly. It also gives each grab a soft start, since the
+            // filter ramps up from zero (reset in setScrollMode).
+            scrollVelocity = SCROLL_SMOOTHING * scrollVelocity + (1 - SCROLL_SMOOTHING) * rawWheel;
+            double wheelDelta = scrollVelocity;
             dWheel += wheelDelta;
             scrollAccum += wheelDelta;
-            scrollVelocity = 0.6 * scrollVelocity + 0.4 * wheelDelta;
             // Consume the rotation so it neither moves the cursor nor piles up for later.
             dYaw = 0;
             dPitch = 0;

@@ -27,4 +27,16 @@
         android:id="@+id/menu_middle_click"
         android:icon="@drawable/ic_background"
         android:title="@string/middle_click"/>
+    <item
+        android:id="@+id/menu_pause"
+        android:icon="@drawable/ic_am_pause"
+        android:title="@string/pause_pointer"/>
+    <item
+        android:id="@+id/menu_back"
+        android:icon="@drawable/ic_am_back"
+        android:title="@string/menu_back"/>
+    <item
+        android:id="@+id/menu_home"
+        android:icon="@drawable/ic_am_home"
+        android:title="@string/menu_home"/>
 </menu>

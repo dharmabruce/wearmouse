@@ -156,8 +156,23 @@ public class MouseFragment extends Fragment {
             actionDrawer.getController().peekDrawer();
         } else if (id == R.id.menu_middle_click) {
             controller.middleClick();
+        } else if (id == R.id.menu_back) {
+            controller.pressBack();
+            actionDrawer.getController().peekDrawer();
+        } else if (id == R.id.menu_home) {
+            controller.pressHome();
+            actionDrawer.getController().peekDrawer();
+        } else if (id == R.id.menu_pause) {
+            boolean paused = controller.togglePause();
+            updatePauseMenuItem(menuItem, paused);
+            actionDrawer.getController().peekDrawer();
         }
         return false;
+    }
+
+    private void updatePauseMenuItem(MenuItem item, boolean paused) {
+        item.setTitle(paused ? R.string.resume_pointer : R.string.pause_pointer);
+        item.setIcon(paused ? R.drawable.ic_am_resume : R.drawable.ic_am_pause);
     }
 
     @Override

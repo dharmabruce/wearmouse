@@ -25,6 +25,7 @@ class Constants {
 
     static final byte ID_KEYBOARD = 1;
     static final byte ID_MOUSE = 2;
+    static final byte ID_CONSUMER = 3;
     static final byte ID_BATTERY = 32;
 
     private static final byte[] HIDD_REPORT_DESC = {
@@ -82,6 +83,23 @@ class Constants {
         (byte) 0x95, (byte) 0x03, //       Report count (3)
         (byte) 0x81, (byte) 0x06, //       Input (Data, Variable, Relative)
         (byte) 0xC0,              //    End Collection
+        (byte) 0xC0,              // End Collection
+
+        // Consumer Control (Android system navigation: Home, Back)
+        (byte) 0x05, (byte) 0x0C, // Usage Page (Consumer)
+        (byte) 0x09, (byte) 0x01, // Usage (Consumer Control)
+        (byte) 0xA1, (byte) 0x01, // Collection (Application)
+        (byte) 0x85, ID_CONSUMER, //    Report ID
+        (byte) 0x15, (byte) 0x00, //    Logical minimum (0)
+        (byte) 0x25, (byte) 0x01, //    Logical maximum (1)
+        (byte) 0x75, (byte) 0x01, //    Report size (1)
+        (byte) 0x95, (byte) 0x02, //    Report count (2)
+        (byte) 0x0A, (byte) 0x23, (byte) 0x02, // Usage (AC Home) 0x0223 -> KEYCODE_HOME
+        (byte) 0x0A, (byte) 0x24, (byte) 0x02, // Usage (AC Back) 0x0224 -> KEYCODE_BACK
+        (byte) 0x81, (byte) 0x02, //    Input (Data, Variable, Absolute) ; two nav bits
+        (byte) 0x75, (byte) 0x01, //    Report size (1)
+        (byte) 0x95, (byte) 0x06, //    Report count (6)
+        (byte) 0x81, (byte) 0x01, //    Input (Constant)                 ; 6 bit padding
         (byte) 0xC0,              // End Collection
 
         // Battery

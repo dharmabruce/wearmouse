@@ -68,11 +68,14 @@ public class TapDetector implements SensorEventListener {
 
     // --- Tunables ------------------------------------------------------------
 
-    /** Jerk (m/s^3) that counts as a pinch contact. Real pinches are 170–400, motion stays <~115. */
-    private static final float JERK_THRESHOLD = 100f;
+    /** Jerk (m/s^3) that counts as a pinch contact. Real pinches are 170–400, motion stays <~115.
+     * Nudged below the old 100 to catch the softest pinches; the gyro gate still rejects motion. */
+    private static final float JERK_THRESHOLD = 90f;
 
-    /** Max angular speed (rad/s) at which a press is accepted, so aiming the cursor never grabs. */
-    private static final float GYRO_GATE_RAD_S = 1.2f;
+    /** Max angular speed (rad/s) at which a press is accepted, so aiming the cursor never grabs.
+     * Relaxed from 1.2 so a tap done with a little incidental wrist motion isn't rejected; pointing
+     * is smooth rotation (low jerk) so it still won't reach the jerk threshold within this gate. */
+    private static final float GYRO_GATE_RAD_S = 1.4f;
 
     /** Above this angular speed (rad/s) we consider the wrist to be moving (i.e. scrolling). */
     private static final float MOVE_GYRO_RAD_S = 0.7f;
