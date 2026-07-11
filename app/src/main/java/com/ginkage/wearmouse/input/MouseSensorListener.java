@@ -106,6 +106,12 @@ public class MouseSensorListener implements SensorService.OrientationListener {
     /** When true, drop all sensor-driven output (motion, scroll, clicks) — a pointer "mute". */
     private boolean paused;
 
+    /**
+     * When true, drop orientation input because a wrist-flip gesture is in flight — the flip is a
+     * violent rotation that would otherwise smear the cursor across the screen.
+     */
+    private boolean gestureSuppressed;
+
     /** When true, wrist motion scrolls the wheel instead of moving the cursor (grab-to-scroll). */
     private boolean scrollMode;
     /** Total wheel ticks emitted during the current grab, used to tell a tap from a scroll. */
@@ -120,7 +126,7 @@ public class MouseSensorListener implements SensorService.OrientationListener {
 
     @Override
     public void onOrientation(double[] quaternion) {
-        if (paused) {
+        if (paused || gestureSuppressed) {
             // Muted: freeze the pointer. The next frame after resume re-seeds from rest (firstRead).
             return;
         }
@@ -317,6 +323,23 @@ public class MouseSensorListener implements SensorService.OrientationListener {
     /** @return whether sensor-driven output is currently muted. */
     boolean isPaused() {
         return paused;
+    }
+
+    /**
+     * Freeze or unfreeze the pointer for the duration of a wrist-flip gesture. Entering drops the
+     * unsent rotation residue (so the flip's lead-in never leaks into the cursor); leaving re-seeds
+     * from rest so the pointer stays where the flip found it.
+     *
+     * @param suppressed {@code true} while the flip is in flight.
+     */
+    void setGestureSuppressed(boolean suppressed) {
+        if (suppressed && !gestureSuppressed) {
+            dYaw = 0;
+            dPitch = 0;
+        } else if (!suppressed && gestureSuppressed) {
+            firstRead = true;
+        }
+        gestureSuppressed = suppressed;
     }
 
     private static double clamp(double val) {

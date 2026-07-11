@@ -46,7 +46,8 @@ public class SettingsUtil {
         SettingKey.STABILIZE,
         SettingKey.STAY_CONNECTED,
         SettingKey.TAP_TO_CLICK,
-        SettingKey.REVERSE_SCROLL
+        SettingKey.REVERSE_SCROLL,
+        SettingKey.FLIP_GESTURES
     })
     public @interface SettingKey {
         String CALIBRATION = "pref_settingCalibration";
@@ -57,6 +58,7 @@ public class SettingsUtil {
         String STAY_CONNECTED = "pref_settingStayConnected";
         String TAP_TO_CLICK = "pref_settingTapToClick";
         String REVERSE_SCROLL = "pref_settingReverseScroll";
+        String FLIP_GESTURES = "pref_settingFlipGestures";
     }
 
     private static final Map<String, Boolean> defaults =
@@ -68,6 +70,7 @@ public class SettingsUtil {
                     .put(SettingKey.STAY_CONNECTED, false)
                     .put(SettingKey.TAP_TO_CLICK, true)
                     .put(SettingKey.REVERSE_SCROLL, false)
+                    .put(SettingKey.FLIP_GESTURES, true)
                     .build();
 
     private final SharedPreferences sharedPref;

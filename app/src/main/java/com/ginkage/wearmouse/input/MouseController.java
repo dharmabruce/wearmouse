@@ -23,6 +23,8 @@ import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.provider.Settings;
 import android.view.MotionEvent;
 import android.view.Surface;
@@ -73,6 +75,8 @@ public class MouseController {
     private final MouseSensorListener sensorListener;
     private final SensorServiceConnection connection;
     private final TapDetector tapDetector;
+    private final WristFlipDetector flipDetector;
+    @Nullable private final Vibrator vibrator;
 
     /**
      * @param context Activity this controller is bound to.
@@ -98,6 +102,33 @@ public class MouseController {
                                 handlePinchUp();
                             }
                         });
+        this.flipDetector =
+                new WristFlipDetector(
+                        context,
+                        new WristFlipDetector.FlipListener() {
+                            @Override
+                            public void onFlipStart() {
+                                handleFlipStart();
+                            }
+
+                            @Override
+                            public void onBack() {
+                                pressBack();
+                                buzz(BUZZ_BACK);
+                            }
+
+                            @Override
+                            public void onHome() {
+                                pressHome();
+                                buzz(BUZZ_HOME);
+                            }
+
+                            @Override
+                            public void onFlipEnd() {
+                                handleFlipEnd();
+                            }
+                        });
+        this.vibrator = context.getSystemService(Vibrator.class);
     }
 
     /**
@@ -117,6 +148,9 @@ public class MouseController {
 
     /** Should be called in the Activity's (or Fragment's) onStop() method. */
     public void onStop() {
+        // Flip first: ending an in-flight flip may restart the tap detector, which the next line
+        // then stops for good.
+        flipDetector.stop();
         tapDetector.stop();
         pinchHandler.removeCallbacks(inertiaTick);
         connection.unbind();
@@ -204,9 +238,15 @@ public class MouseController {
     private void setPaused(boolean paused) {
         sensorListener.setPaused(paused);
         if (paused) {
+            flipDetector.stop();
             tapDetector.stop();
-        } else if (settings.getBoolean(SettingKey.TAP_TO_CLICK) && tapDetector.isSupported()) {
-            tapDetector.start();
+        } else {
+            if (settings.getBoolean(SettingKey.TAP_TO_CLICK) && tapDetector.isSupported()) {
+                tapDetector.start();
+            }
+            if (settings.getBoolean(SettingKey.FLIP_GESTURES) && flipDetector.isSupported()) {
+                flipDetector.start();
+            }
         }
     }
 
@@ -240,6 +280,9 @@ public class MouseController {
 
         if (settings.getBoolean(SettingKey.TAP_TO_CLICK) && tapDetector.isSupported()) {
             tapDetector.start();
+        }
+        if (settings.getBoolean(SettingKey.FLIP_GESTURES) && flipDetector.isSupported()) {
+            flipDetector.start();
         }
     }
 
@@ -291,6 +334,53 @@ public class MouseController {
         pinchHandler.removeCallbacks(inertiaTick);
         inertiaVelocity = 0;
         sensorListener.setScrollMode(true);
+        // Acknowledge the contact immediately — this is also the grab confirmation for a scroll.
+        buzz(BUZZ_CONTACT);
+    }
+
+    // --- Wrist-flip Back/Home ---------------------------------------------------
+
+    /** Haptic for Back: one firm buzz, felt as the wrist lands back screen-up. Full amplitude —
+     * a default-strength 40ms tick proved imperceptible mid-gesture on the wrist. */
+    private static final VibrationEffect BUZZ_BACK =
+            VibrationEffect.createWaveform(new long[] {0, 80}, new int[] {0, 255}, -1);
+
+    /** Haptic for Home: a double buzz, felt while still holding the wrist flipped — the cue that
+     * the hold registered and it's safe to roll back. */
+    private static final VibrationEffect BUZZ_HOME =
+            VibrationEffect.createWaveform(
+                    new long[] {0, 100, 80, 100}, new int[] {0, 255, 0, 255}, -1);
+
+    /** Haptic for pinch contact: a sharp full-strength tick the instant the pinch lands, so the
+     * feedback feels synced to the finger (buzzing at click *resolution* trailed soft releases by
+     * up to ~400ms and felt disconnected). Short enough that the motor's ring-down dies inside the
+     * detector's MIN_HOLD window, so the buzz can't read back as a release. Full amplitude — the
+     * predefined EFFECT_CLICK and default-amplitude buzzes are imperceptible on this watch. */
+    private static final VibrationEffect BUZZ_CONTACT =
+            VibrationEffect.createWaveform(new long[] {0, 30}, new int[] {0, 255}, -1);
+
+    @MainThread
+    private void handleFlipStart() {
+        // The flip is a violent roll: freeze the pointer for the round trip, and park the pinch
+        // detector so the flip's stop transients can't fake a click.
+        sensorListener.setGestureSuppressed(true);
+        tapDetector.stop();
+    }
+
+    @MainThread
+    private void handleFlipEnd() {
+        sensorListener.setGestureSuppressed(false);
+        if (!sensorListener.isPaused()
+                && settings.getBoolean(SettingKey.TAP_TO_CLICK)
+                && tapDetector.isSupported()) {
+            tapDetector.start();
+        }
+    }
+
+    private void buzz(VibrationEffect effect) {
+        if (vibrator != null && vibrator.hasVibrator()) {
+            vibrator.vibrate(effect);
+        }
     }
 
     @MainThread
@@ -299,7 +389,8 @@ public class MouseController {
         final double velocity = sensorListener.getScrollVelocity();
         sensorListener.setScrollMode(false);
         if (Math.abs(scrolled) < CLICK_SCROLL_THRESHOLD) {
-            // Barely moved: it was a tap → a left click.
+            // Barely moved: it was a tap → a left click. The contact buzz already fired at pinch
+            // down; a second buzz here trailed soft releases by ~400ms and felt out of sync.
             sendButtonEvent(MouseButton.LEFT, true);
             sendButtonEvent(MouseButton.LEFT, false);
         } else {

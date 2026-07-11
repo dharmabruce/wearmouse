@@ -22,6 +22,11 @@
         android:summary="@string/pref_settingTapToClick_summary"
         android:persistent="false"/>
     <SwitchPreference
+        android:key="pref_settingFlipGestures"
+        android:title="@string/pref_settingFlipGestures"
+        android:summary="@string/pref_settingFlipGestures_summary"
+        android:persistent="false"/>
+    <SwitchPreference
         android:key="pref_settingReverseScroll"
         android:title="@string/pref_settingReverseScroll"
         android:summary="@string/pref_settingReverseScroll_summary"

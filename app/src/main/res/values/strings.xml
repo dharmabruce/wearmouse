@@ -132,6 +132,10 @@
     <string name="pref_settingTapToClick">Tap to click</string>
     <!-- Description of the preference for enabling finger-tap detection as a mouse click -->
     <string name="pref_settingTapToClick_summary">Tap your fingers to click; hold to drag</string>
+    <!-- Name of the preference for enabling wrist-flip Back/Home gestures -->
+    <string name="pref_settingFlipGestures">Flip gestures</string>
+    <!-- Description of the preference for enabling wrist-flip Back/Home gestures -->
+    <string name="pref_settingFlipGestures_summary">Flip your wrist over and back for Back; hold flipped 1 second for Home</string>
     <!-- Name of the preference for reversing the grab-to-scroll direction -->
     <string name="pref_settingReverseScroll">Reverse scroll direction</string>
     <!-- Description of the preference for reversing the grab-to-scroll direction -->

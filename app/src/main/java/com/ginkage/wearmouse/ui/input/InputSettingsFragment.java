@@ -57,6 +57,7 @@ public class InputSettingsFragment extends PreferenceFragment {
         calibrationPref = (SwitchPreference) findPreference(SettingKey.CALIBRATION);
 
         initBooleanPref(SettingKey.TAP_TO_CLICK);
+        initBooleanPref(SettingKey.FLIP_GESTURES);
         initReverseScrollPref();
         initBooleanPref(SettingKey.STABILIZE);
         initBooleanPref(SettingKey.CURSOR_8_WAY);
