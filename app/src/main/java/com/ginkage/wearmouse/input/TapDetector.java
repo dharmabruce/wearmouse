@@ -73,9 +73,10 @@ public class TapDetector implements SensorEventListener {
     private static final float JERK_THRESHOLD = 90f;
 
     /** Max angular speed (rad/s) at which a press is accepted, so aiming the cursor never grabs.
-     * Relaxed from 1.2 so a tap done with a little incidental wrist motion isn't rejected; pointing
-     * is smooth rotation (low jerk) so it still won't reach the jerk threshold within this gate. */
-    private static final float GYRO_GATE_RAD_S = 1.4f;
+     * The 2026-07-10 tap recordings show every genuine press lands with gyro ≤ 1.0, while the old
+     * speculative 1.4 admitted motion-noise jerk as false taps during pointing. 1.1 keeps a little
+     * headroom over the recorded taps; raise only with data. */
+    private static final float GYRO_GATE_RAD_S = 1.1f;
 
     /** Above this angular speed (rad/s) we consider the wrist to be moving (i.e. scrolling). */
     private static final float MOVE_GYRO_RAD_S = 0.7f;
@@ -106,8 +107,12 @@ public class TapDetector implements SensorEventListener {
     /** Hard cap on a held pinch; force-release after this so it can never stick. */
     private static final long SAFETY_TIMEOUT_MS = 1200;
 
-    /** Dead-time after a release before the next press is accepted. */
-    private static final long REFRACTORY_MS = 200;
+    /** Dead-time after a release before the next press is accepted. Sized from the 2026-07-10
+     * double-tap recordings: a real double-tap's second press arrives ≥ ~150 ms after the first
+     * release, while a single tap's post-release wobble spikes arrive ≤ ~131 ms. 150 admits every
+     * recorded double (making host double-clicks work) and blocked every wobble; 120 and below
+     * turned single taps into phantom doubles. The margin is thin — revisit if either appears. */
+    private static final long REFRACTORY_MS = 150;
 
     /** Sampling period (us). 100 Hz matches the tuning rate and needs no high-rate permission. */
     private static final int SAMPLE_PERIOD_US = 10000;
