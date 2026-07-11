@@ -40,9 +40,10 @@ import java.io.IOException;
 import java.util.Locale;
 
 /**
- * Debug-only tool that records the raw IMU streams (linear acceleration, raw acceleration, and
- * gyroscope) to a CSV file, so tap-vs-motion traces can be captured on-wrist and analysed offline
- * to tune {@link com.ginkage.wearmouse.input.TapDetector}.
+ * Debug-only tool that records the raw IMU streams (linear acceleration, raw acceleration,
+ * gyroscope, and gravity) to a CSV file, so gesture-vs-motion traces can be captured on-wrist and
+ * analysed offline to tune {@link com.ginkage.wearmouse.input.TapDetector} and the wrist-flip
+ * detector.
  *
  * <p>It is intentionally not in any menu. Launch it over adb:
  *
@@ -52,8 +53,15 @@ import java.util.Locale;
  *
  * <pre>adb pull /sdcard/Android/data/com.ginkage.wearmouse/files/</pre>
  *
- * <p>Suggested protocol for one file: hold still ~3s, then ~5 deliberate taps with ~2s gaps, then
- * air-mouse the cursor around ~5s, then one tap-hold-drag. The bursts segment cleanly by eye.
+ * <p>Suggested protocol for tap tuning in one file: hold still ~3s, then ~5 deliberate taps with
+ * ~2s gaps, then air-mouse the cursor around ~5s, then one tap-hold-drag. The bursts segment
+ * cleanly by eye.
+ *
+ * <p>Suggested protocol for flip tuning (watch on the left wrist): hold still ~3s, then ~5 quick
+ * flip-and-returns (palm up, straight back) with ~2s gaps, then ~5 flip-and-holds (stay palm-up
+ * ~1s before returning), then false-positive candidates: air-mouse the cursor around ~10s, drink
+ * from a mug, check the time, rest the arm at your side, and gesture while talking. The gravity-z
+ * trace (screen-normal component, +9.8 screen-up to -9.8 screen-down) is the signal of interest.
  *
  * <p>Writing is done synchronously on the main thread and flushed periodically, so data is durable
  * even if the recording is never explicitly stopped.
@@ -66,6 +74,7 @@ public class RecorderActivity extends WearableActivity implements SensorEventLis
     private static final String TAG_LINEAR_ACCEL = "la";
     private static final String TAG_ACCEL = "ac";
     private static final String TAG_GYRO = "gy";
+    private static final String TAG_GRAVITY = "gr";
 
     /** Flush to disk every this many samples so a crash/kill loses at most this much. */
     private static final int FLUSH_EVERY = 64;
@@ -74,6 +83,7 @@ public class RecorderActivity extends WearableActivity implements SensorEventLis
     private Sensor linearAccel;
     private Sensor accel;
     private Sensor gyro;
+    private Sensor gravity;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
@@ -116,9 +126,11 @@ public class RecorderActivity extends WearableActivity implements SensorEventLis
         linearAccel = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
         accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         gyro = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+        gravity = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY);
         Log.i(
                 TAG,
-                "sensors: linearAccel=" + linearAccel + " accel=" + accel + " gyro=" + gyro);
+                "sensors: linearAccel=" + linearAccel + " accel=" + accel + " gyro=" + gyro
+                        + " gravity=" + gravity);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -195,6 +207,9 @@ public class RecorderActivity extends WearableActivity implements SensorEventLis
             if (gyro != null) {
                 any |= sensorManager.registerListener(this, gyro, rate);
             }
+            if (gravity != null) {
+                any |= sensorManager.registerListener(this, gravity, rate);
+            }
         } catch (SecurityException e) {
             // Never let a sampling-rate permission issue crash the recorder.
             Log.e(TAG, "registerListener denied", e);
@@ -258,6 +273,9 @@ public class RecorderActivity extends WearableActivity implements SensorEventLis
                 break;
             case Sensor.TYPE_GYROSCOPE:
                 tag = TAG_GYRO;
+                break;
+            case Sensor.TYPE_GRAVITY:
+                tag = TAG_GRAVITY;
                 break;
             default:
                 return;
