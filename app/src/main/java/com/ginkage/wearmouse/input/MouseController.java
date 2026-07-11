@@ -23,6 +23,7 @@ import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
@@ -129,6 +130,9 @@ public class MouseController {
                             }
                         });
         this.vibrator = context.getSystemService(Vibrator.class);
+        // A sweep that breaks the dead-zone pin is drag evidence: commit the button right away
+        // (posted to the main thread; the break arrives on the sensor thread).
+        this.sensorListener.setDeadZoneBreakListener(() -> pinchHandler.post(dragCommit));
     }
 
     /**
@@ -308,6 +312,14 @@ public class MouseController {
     /** Below this much accumulated scroll, a pinch is treated as a click rather than a scroll. */
     private static final double CLICK_SCROLL_THRESHOLD = 2.0;
 
+    /**
+     * A pinch landing within this long after a click is the second half of a double-tap: the left
+     * button goes down immediately and the release decides what it was — a quick release reads as
+     * the second click of a double-click, holding and moving is a drag (text selection, icon
+     * moves). Recorded doubles re-press 150-250ms after the first release, so 300 covers them.
+     */
+    private static final long DRAG_WINDOW_MS = 300;
+
     /** Inertia tick period and decay; momentum stops when speed falls below the floor. */
     private static final long INERTIA_TICK_MS = 16;
     private static final double INERTIA_DECAY = 0.9;
@@ -315,6 +327,34 @@ public class MouseController {
 
     private final Handler pinchHandler = new Handler(Looper.getMainLooper());
     private double inertiaVelocity;
+
+    /**
+     * How long a second-tap pinch may stay pinned and buttonless before it's committed as a drag.
+     * A quick double-tap releases well inside this; past it (or on a pin-breaking sweep) the
+     * button goes down and stays down until the pinch ends.
+     */
+    private static final long DRAG_COMMIT_MS = 300;
+
+    /** When the last pinch-click resolved, for spotting the second tap of a double. */
+    private long lastClickUptimeMs;
+
+    /** The current pinch is a double-tap hold (pinned, possibly a drag). */
+    private boolean dragging;
+
+    /** The left button has been pressed for this hold (drag committed). */
+    private boolean dragButtonSent;
+
+    /** When the drag-hold press landed, to tell a real drag from a quick double-tap at release. */
+    private long dragStartUptimeMs;
+
+    /** Commits the pinned hold to a button-drag: on hold timeout or a pin-breaking sweep. */
+    private final Runnable dragCommit =
+            () -> {
+                if (dragging && !dragButtonSent) {
+                    dragButtonSent = true;
+                    sendButtonEvent(MouseButton.LEFT, true);
+                }
+            };
 
     private final Runnable inertiaTick =
             new Runnable() {
@@ -330,13 +370,32 @@ public class MouseController {
 
     @MainThread
     private void handlePinchDown() {
-        // Stop any leftover momentum and grab the page: wrist motion now scrolls, cursor freezes.
         pinchHandler.removeCallbacks(inertiaTick);
         inertiaVelocity = 0;
-        sensorListener.setScrollMode(true);
-        // Acknowledge the contact immediately — this is also the grab confirmation for a scroll.
-        buzz(BUZZ_CONTACT);
+        if (SystemClock.uptimeMillis() - lastClickUptimeMs <= DRAG_WINDOW_MS) {
+            // Second tap of a double: pin the cursor and wait — NO button yet. A quick release
+            // sends an atomic second click at the pinned spot (pressing the button up front made
+            // click2 hostage to release-detection latency: a missed soft release held the button
+            // until wobble broke the pin, and the host canceled the double-click as a micro-drag).
+            // The button only goes down on drag evidence: the hold outliving DRAG_COMMIT_MS, or a
+            // sweep breaking the pin.
+            dragging = true;
+            dragButtonSent = false;
+            dragStartUptimeMs = SystemClock.uptimeMillis();
+            tapDetector.setDragHold();
+            sensorListener.setDragDeadZone(true);
+            pinchHandler.postDelayed(dragCommit, DRAG_COMMIT_MS);
+        } else {
+            // Lone pinch: grab the page — wrist motion now scrolls, cursor freezes.
+            sensorListener.setScrollMode(true);
+        }
+        // No contact buzz: buzzing on every pinch fed the motor's ring back into the detector
+        // and bred chains of phantom taps. Only gesture *outcomes* buzz (flips, drag end).
     }
+
+    /** How long the motor's ring pollutes the IMU after a short buzz: drive + start latency +
+     * mechanical decay, sized generously now that no real release timing is at stake. */
+    private static final long SELF_BUZZ_MASK_MS = 250;
 
     // --- Wrist-flip Back/Home ---------------------------------------------------
 
@@ -385,6 +444,29 @@ public class MouseController {
 
     @MainThread
     private void handlePinchUp() {
+        if (dragging) {
+            // End of a double-tap hold. Not yet committed → it was a quick second tap: send an
+            // atomic click at the pinned spot (a clean double-click). Committed → lift the button
+            // to end the drag, confirmed by a buzz so the wearer knows the payload dropped.
+            // Refreshing the click clock lets quick taps chain (triple-click selects a paragraph).
+            dragging = false;
+            pinchHandler.removeCallbacks(dragCommit);
+            sensorListener.setDragDeadZone(false);
+            if (dragButtonSent) {
+                sendButtonEvent(MouseButton.LEFT, false);
+                if (SystemClock.uptimeMillis() - dragStartUptimeMs > 400) {
+                    // Blind the detector first: this buzz fires with no pinch held, and its ring
+                    // could otherwise read as a fresh press.
+                    tapDetector.maskSelfVibration(SELF_BUZZ_MASK_MS);
+                    buzz(BUZZ_CONTACT);
+                }
+            } else {
+                sendButtonEvent(MouseButton.LEFT, true);
+                sendButtonEvent(MouseButton.LEFT, false);
+            }
+            lastClickUptimeMs = SystemClock.uptimeMillis();
+            return;
+        }
         final double scrolled = sensorListener.getScrollAccum();
         final double velocity = sensorListener.getScrollVelocity();
         sensorListener.setScrollMode(false);
@@ -393,6 +475,7 @@ public class MouseController {
             // down; a second buzz here trailed soft releases by ~400ms and felt out of sync.
             sendButtonEvent(MouseButton.LEFT, true);
             sendButtonEvent(MouseButton.LEFT, false);
+            lastClickUptimeMs = SystemClock.uptimeMillis();
         } else {
             // It was a scroll: let it coast to a stop with macOS-style inertia.
             inertiaVelocity = velocity;

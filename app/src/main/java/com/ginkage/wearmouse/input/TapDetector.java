@@ -26,8 +26,10 @@ import android.hardware.SensorManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.util.Log;
 import androidx.annotation.MainThread;
 import androidx.annotation.Nullable;
+import java.util.Locale;
 
 /**
  * Detects finger-pinch gestures from the wrist IMU and reports them as press/release events. A short
@@ -54,6 +56,9 @@ import androidx.annotation.Nullable;
  * <p>Tunables were set from on-wrist recordings (see {@code RecorderActivity}); re-capture to re-tune.
  */
 public class TapDetector implements SensorEventListener {
+
+    /** Debug tracing of every press/release decision; watch with `adb logcat -s TapDetector`. */
+    private static final String TAG = "TapDetector";
 
     /** Callback for pinch transitions. Delivered on the main thread. */
     public interface PinchListener {
@@ -104,15 +109,52 @@ public class TapDetector implements SensorEventListener {
      * to get going after the pinch before it would otherwise resolve as a click. */
     private static final long QUIET_RELEASE_MS = 350;
 
+    /** Quiet-hold budget while button-dragging: the wearer needs time to line up before the sweep
+     * starts, so a drag-hold waits much longer before a still pinch resolves as a click. */
+    private static final long DRAG_QUIET_RELEASE_MS = 700;
+
+    /** Quiet-hold release jerk while button-dragging — firmer than a tap's, so a small adjustment
+     * twitch before the sweep doesn't end the hold as a premature click. */
+    private static final float DRAG_JERK_RELEASE_QUIET = 150f;
+
     /** Hard cap on a held pinch; force-release after this so it can never stick. */
     private static final long SAFETY_TIMEOUT_MS = 1200;
 
-    /** Dead-time after a release before the next press is accepted. Sized from the 2026-07-10
-     * double-tap recordings: a real double-tap's second press arrives ≥ ~150 ms after the first
-     * release, while a single tap's post-release wobble spikes arrive ≤ ~131 ms. 150 admits every
-     * recorded double (making host double-clicks work) and blocked every wobble; 120 and below
-     * turned single taps into phantom doubles. The margin is thin — revisit if either appears. */
-    private static final long REFRACTORY_MS = 150;
+    /** Rest-release while button-dragging: selecting text or hovering an icon over a target means
+     * pausing to aim, so a drag tolerates much longer stillness than a scroll before it counts as
+     * "let go". 500 dropped drags mid-aim in practice; the drop is confirmed by a buzz, so a
+     * longer wait is discoverable. */
+    private static final long DRAG_STILL_RELEASE_MS = 800;
+
+    /** Release jerk while button-dragging. Dragging swings the arm harder than scrolling, and its
+     * motion jerk was cutting drags at the scroll threshold (220) — demand a truly hard lift. */
+    private static final float DRAG_JERK_RELEASE = 300f;
+
+    /** Safety cap while button-dragging — sweeping out a long selection takes seconds. */
+    private static final long DRAG_SAFETY_TIMEOUT_MS = 5000;
+
+    /** Absolute dead-time after a release before any press is accepted. */
+    private static final long HARD_REFRACTORY_MS = 60;
+
+    /**
+     * Between the hard dead-time and this long after a release, a press must also follow silence
+     * (see below). Live double-tap logs showed second presses landing 117-149 ms after the first
+     * release with jerk 146-224 — the same time range AND amplitude as a single tap's release
+     * wobble, so no fixed refractory or jerk bar can split them. What splits them: wobble is a
+     * continuous ring-down (spikes every 10-40 ms), a real second tap arrives after a quiet gap.
+     */
+    private static final long REARM_WINDOW_MS = 250;
+
+    /** Jerk below this counts as quiet for re-arming. */
+    private static final float REARM_QUIET_JERK = 70f;
+
+    /** How much continuous quiet must precede a press inside the re-arm window. Live second taps
+     * showed 39-78 ms of silence before landing; wobble trains never go quiet this long. */
+    private static final long REARM_QUIET_GAP_MS = 30;
+
+    /** A drag-hold's stricter quiet-release rules only kick in after this long — before it, the
+     * press is treated as the quick second tap of a double-click, whose release must stay fast. */
+    private static final long DRAG_QUIET_GRACE_MS = 300;
 
     /** Sampling period (us). 100 Hz matches the tuning rate and needs no high-rate permission. */
     private static final int SAMPLE_PERIOD_US = 10000;
@@ -128,6 +170,13 @@ public class TapDetector implements SensorEventListener {
     private boolean started;
     private boolean pressed;
 
+    /** The current press is a button-drag (set by the controller): relax the release rules. */
+    private boolean dragHold;
+
+    /** Ignore motion until this uptime: the watch's own vibration motor rings the IMU hard enough
+     * to latch the moved-flag and to fake press/release jerk. */
+    private long maskUntilUptimeMs;
+
     private float gyroSpeed;
 
     private boolean havePrev;
@@ -141,9 +190,13 @@ public class TapDetector implements SensorEventListener {
     private boolean movedSincePinch;
     private long lastReleaseUptimeMs;
 
+    /** Uptime of the most recent sample whose jerk exceeded {@link #REARM_QUIET_JERK}. */
+    private long lastLoudUptimeMs;
+
     private final Runnable safetyRelease =
             () -> {
                 if (pressed) {
+                    Log.d(TAG, "release safety-timeout drag=" + dragHold);
                     release();
                 }
             };
@@ -230,26 +283,55 @@ public class TapDetector implements SensorEventListener {
         final float jerk = (float) Math.sqrt(dx * dx + dy * dy + dz * dz) / dtSec;
         final long now = SystemClock.uptimeMillis();
 
+        // While our own motor rings, don't let its noise latch motion state or fake a press.
+        // Releases are unaffected: MIN_HOLD already gates them past the ring-down, and a real
+        // quick release (~90-110ms after contact) must not be swallowed by the mask.
+        final boolean masked = now < maskUntilUptimeMs;
+
+        // Silence tracking for re-arming: how long ago the jerk was last loud, EXCLUDING the
+        // current sample (a candidate press is itself loud).
+        final long prevLoudUptimeMs = lastLoudUptimeMs;
+        if (jerk >= REARM_QUIET_JERK) {
+            lastLoudUptimeMs = now;
+        }
+
         if (!pressed) {
-            if (jerk >= JERK_THRESHOLD
-                    && gyroSpeed < GYRO_GATE_RAD_S
-                    && now - lastReleaseUptimeMs >= REFRACTORY_MS) {
-                pressed = true;
-                movedSincePinch = false;
-                downUptimeMs = now;
-                restSinceUptimeMs = now;
-                handler.removeCallbacks(safetyRelease);
-                handler.postDelayed(safetyRelease, SAFETY_TIMEOUT_MS);
-                listener.onPinchDown();
+            if (jerk >= JERK_THRESHOLD && gyroSpeed < GYRO_GATE_RAD_S) {
+                final long sinceRelease = now - lastReleaseUptimeMs;
+                if (masked) {
+                    Log.d(TAG, String.format(Locale.US,
+                            "press blocked (buzz mask) jerk=%.0f gyro=%.2f", jerk, gyroSpeed));
+                } else if (sinceRelease < HARD_REFRACTORY_MS) {
+                    Log.d(TAG, String.format(Locale.US,
+                            "press blocked (dead-time %dms) jerk=%.0f gyro=%.2f",
+                            sinceRelease, jerk, gyroSpeed));
+                } else if (sinceRelease < REARM_WINDOW_MS
+                        && now - prevLoudUptimeMs < REARM_QUIET_GAP_MS) {
+                    // Still ringing from the release — not a new tap until it goes quiet.
+                    Log.d(TAG, String.format(Locale.US,
+                            "press blocked (ring %dms, loud %dms ago) jerk=%.0f gyro=%.2f",
+                            sinceRelease, now - prevLoudUptimeMs, jerk, gyroSpeed));
+                } else {
+                    pressed = true;
+                    movedSincePinch = false;
+                    downUptimeMs = now;
+                    restSinceUptimeMs = now;
+                    handler.removeCallbacks(safetyRelease);
+                    handler.postDelayed(safetyRelease, SAFETY_TIMEOUT_MS);
+                    Log.d(TAG, String.format(Locale.US,
+                            "press jerk=%.0f gyro=%.2f sinceRelease=%dms quietGap=%dms",
+                            jerk, gyroSpeed, sinceRelease, now - prevLoudUptimeMs));
+                    listener.onPinchDown();
+                }
             }
             return;
         }
 
-        // Pressed: watch for motion and for the release condition.
-        if (gyroSpeed > MOVE_GYRO_RAD_S) {
+        // Pressed: watch for motion and for the release condition. Motor noise counts as rest.
+        if (!masked && gyroSpeed > MOVE_GYRO_RAD_S) {
             movedSincePinch = true;
         }
-        final boolean atRest = gyroSpeed < STILL_GYRO_RAD_S;
+        final boolean atRest = masked || gyroSpeed < STILL_GYRO_RAD_S;
         if (!atRest) {
             restSinceUptimeMs = now;
         }
@@ -257,15 +339,33 @@ public class TapDetector implements SensorEventListener {
             return;
         }
 
-        final boolean release;
+        final String releaseReason;
         if (!movedSincePinch) {
-            // Quiet hold (a tap): a light lift or a brief settle ends it → quick click.
-            release = jerk >= JERK_RELEASE_QUIET || now - restSinceUptimeMs >= QUIET_RELEASE_MS;
+            // Quiet hold (a tap): a light lift or a brief settle ends it → quick click. A
+            // drag-hold that has lasted past the double-click grace demands a firmer lift, so
+            // there's room to aim before the sweep — but a quick second tap releases fast.
+            final boolean aiming = dragHold && now - downUptimeMs > DRAG_QUIET_GRACE_MS;
+            final float liftJerk = aiming ? DRAG_JERK_RELEASE_QUIET : JERK_RELEASE_QUIET;
+            final long quietMs = dragHold ? DRAG_QUIET_RELEASE_MS : QUIET_RELEASE_MS;
+            releaseReason =
+                    (jerk >= liftJerk)
+                            ? "quiet-lift j=" + (int) jerk
+                            : (now - restSinceUptimeMs >= quietMs) ? "quiet-settle" : null;
         } else {
-            // Scrolling: ignore motion jerk; release on a hard lift or the wrist coming to rest.
-            release = jerk >= JERK_RELEASE_MOVING || now - restSinceUptimeMs >= STILL_RELEASE_MS;
+            // Scrolling or dragging: ignore motion jerk; release on a hard lift or the wrist
+            // coming to rest — a drag tolerates a much longer aiming pause and a harder swing
+            // than a scroll.
+            final long stillMs = dragHold ? DRAG_STILL_RELEASE_MS : STILL_RELEASE_MS;
+            final float liftJerk = dragHold ? DRAG_JERK_RELEASE : JERK_RELEASE_MOVING;
+            releaseReason =
+                    (jerk >= liftJerk)
+                            ? "move-lift j=" + (int) jerk
+                            : (now - restSinceUptimeMs >= stillMs) ? "move-rest" : null;
         }
-        if (release) {
+        if (releaseReason != null) {
+            Log.d(TAG, String.format(Locale.US,
+                    "release %s hold=%dms moved=%b drag=%b",
+                    releaseReason, now - downUptimeMs, movedSincePinch, dragHold));
             release();
         }
     }
@@ -273,9 +373,37 @@ public class TapDetector implements SensorEventListener {
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
+    /**
+     * Blind the detector for a moment because the app is about to buzz its own motor. Without
+     * this, the vibration latches the moved-flag (pushing releases onto the strict drag rules)
+     * and its jerk can fake presses and releases.
+     *
+     * @param durationMs How long to ignore the IMU, from now.
+     */
+    @MainThread
+    void maskSelfVibration(long durationMs) {
+        maskUntilUptimeMs = SystemClock.uptimeMillis() + durationMs;
+    }
+
+    /**
+     * Mark the in-flight press as a button-drag (the controller decides this when a pinch lands
+     * right after a click). Extends the rest-release window and the safety cap so a long, careful
+     * selection sweep isn't cut short. Cleared automatically when the press releases.
+     */
+    @MainThread
+    void setDragHold() {
+        if (!pressed) {
+            return;
+        }
+        dragHold = true;
+        handler.removeCallbacks(safetyRelease);
+        handler.postDelayed(safetyRelease, DRAG_SAFETY_TIMEOUT_MS);
+    }
+
     @MainThread
     private void release() {
         pressed = false;
+        dragHold = false;
         lastReleaseUptimeMs = SystemClock.uptimeMillis();
         handler.removeCallbacks(safetyRelease);
         listener.onPinchUp();

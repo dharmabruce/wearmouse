@@ -19,6 +19,7 @@ package com.ginkage.wearmouse.input;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import androidx.annotation.IntDef;
+import androidx.annotation.Nullable;
 import com.ginkage.wearmouse.bluetooth.MouseReport.MouseDataSender;
 import com.ginkage.wearmouse.sensors.SensorService;
 import java.lang.annotation.Retention;
@@ -112,8 +113,25 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      */
     private boolean gestureSuppressed;
 
+    /**
+     * Cursor displacement (pixels) that ends the drag dead zone. Tap wobble random-walks well
+     * under this; a deliberate sweep punches through it almost immediately.
+     */
+    private static final double DRAG_DEADZONE_PIXELS = 30.0;
+
     /** When true, wrist motion scrolls the wheel instead of moving the cursor (grab-to-scroll). */
     private boolean scrollMode;
+
+    /**
+     * While true, the cursor is pinned until wrist motion accumulates past {@link
+     * #DRAG_DEADZONE_PIXELS}. Used for the second pinch of a double-tap: the host must see zero
+     * motion between the button-down and a quick release (else it cancels the double-click and
+     * starts a micro-drag), but a held pinch that sweeps must still become a real drag.
+     */
+    private boolean dragDeadZone;
+
+    /** Notified (on the sensor thread) when deliberate motion breaks the drag dead zone. */
+    @Nullable private Runnable deadZoneBreakListener;
     /** Total wheel ticks emitted during the current grab, used to tell a tap from a scroll. */
     private double scrollAccum;
     /** Smoothed wheel ticks per frame; drives both the live scroll output and the inertia seed. */
@@ -224,6 +242,29 @@ public class MouseSensorListener implements SensorService.OrientationListener {
         dYaw += x / CURSOR_SPEED;
         dPitch += y / CURSOR_SPEED;
         dWheel += wheel;
+    }
+
+    /**
+     * Enter or leave the drag dead zone. On entry the pending rotation is dropped so the cursor
+     * pins exactly where the click landed; it stays pinned (button events still flow) until the
+     * wrist deliberately moves far enough, or this is switched off.
+     *
+     * @param on {@code true} to pin the cursor, {@code false} to release the pin.
+     */
+    void setDragDeadZone(boolean on) {
+        if (on && !dragDeadZone) {
+            dYaw = 0;
+            dPitch = 0;
+        }
+        dragDeadZone = on;
+    }
+
+    /**
+     * Sets the callback fired when deliberate motion breaks the drag dead zone (delivered on the
+     * sensor thread) — the moment the controller must turn the pinned pinch into a button-drag.
+     */
+    void setDeadZoneBreakListener(@Nullable Runnable listener) {
+        deadZoneBreakListener = listener;
     }
 
     /**
@@ -372,6 +413,24 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      */
     private boolean sendCurrentState() {
         boolean overflow = false;
+
+        if (dragDeadZone) {
+            // Pinned: accumulate motion to measure intent, but report none (buttons still drain).
+            // Signed accumulation lets tap wobble cancel itself out while a sweep adds up.
+            double pixels = Math.hypot(dYaw, dPitch) * CURSOR_SPEED;
+            if (pixels < DRAG_DEADZONE_PIXELS) {
+                sendData((byte) 0, (byte) 0, (byte) 0);
+                return false;
+            }
+            // Deliberate motion: it's a drag. Drop the pent-up wobble so the cursor glides from
+            // where the button went down instead of jumping.
+            dragDeadZone = false;
+            dYaw = 0;
+            dPitch = 0;
+            if (deadZoneBreakListener != null) {
+                deadZoneBreakListener.run();
+            }
+        }
 
         if (scrollMode) {
             // Grab-to-scroll: vertical wrist motion drives the wheel, cursor is frozen. Tie the
