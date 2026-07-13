@@ -104,6 +104,9 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      */
     private volatile boolean firstRead;
 
+    // Guarded by pendingEvents: written as the queue drains (sensor thread) and reset by flush()
+    // (main thread). The outbound report is read under the same monitor so a release can't
+    // interleave with a stale press and leave the host holding a button.
     private boolean leftButtonPressed;
     private boolean rightButtonPressed;
     private boolean middleButtonPressed;
@@ -395,16 +398,20 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      * button until the next connect.
      */
     void flush() {
-        boolean hadPending;
+        boolean release;
         synchronized (pendingEvents) {
-            hadPending = !pendingEvents.isEmpty();
+            boolean hadPending = !pendingEvents.isEmpty();
             pendingEvents.clear();
-        }
-        if (hadPending || leftButtonPressed || rightButtonPressed || middleButtonPressed) {
-            leftButtonPressed = false;
-            rightButtonPressed = false;
-            middleButtonPressed = false;
-            dataSender.sendMouse(false, false, false, 0, 0, 0);
+            release =
+                    hadPending || leftButtonPressed || rightButtonPressed || middleButtonPressed;
+            if (release) {
+                leftButtonPressed = false;
+                rightButtonPressed = false;
+                middleButtonPressed = false;
+                // Send the all-up report under the monitor so a concurrent sendData() on the
+                // sensor thread can't slip a stale button-down out after this release.
+                dataSender.sendMouse(false, false, false, 0, 0, 0);
+            }
         }
     }
 
@@ -587,9 +594,10 @@ public class MouseSensorListener implements SensorService.OrientationListener {
                     middleButtonPressed = event.state;
                 }
             }
+            // Send under the monitor so the report matches the button state we just applied and
+            // can't race a concurrent flush() that is releasing everything.
+            dataSender.sendMouse(
+                    leftButtonPressed, rightButtonPressed, middleButtonPressed, x, y, wheel);
         }
-
-        dataSender.sendMouse(
-                leftButtonPressed, rightButtonPressed, middleButtonPressed, x, y, wheel);
     }
 }
