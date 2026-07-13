@@ -165,6 +165,10 @@ public class MouseController {
         flipDetector.stop();
         tapDetector.stop();
         pinchHandler.removeCallbacks(inertiaTick);
+        // Stopping the tap detector mid-pinch enqueues the button release, but the queue only
+        // drains on orientation frames, which unbind() is about to stop — flush it directly so
+        // the host isn't left with a button held down until the next connect.
+        sensorListener.flush();
         connection.unbind();
     }
 
