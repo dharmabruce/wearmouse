@@ -114,12 +114,20 @@ public class MouseController {
 
                             @Override
                             public void onBack() {
+                                // A flip that was in flight when the pointer got muted can still
+                                // land here after flipDetector.stop(); drop it.
+                                if (sensorListener.isPaused()) {
+                                    return;
+                                }
                                 pressBack();
                                 buzz(BUZZ_BACK);
                             }
 
                             @Override
                             public void onHome() {
+                                if (sensorListener.isPaused()) {
+                                    return;
+                                }
                                 pressHome();
                                 buzz(BUZZ_HOME);
                             }
@@ -157,6 +165,10 @@ public class MouseController {
         flipDetector.stop();
         tapDetector.stop();
         pinchHandler.removeCallbacks(inertiaTick);
+        // Stopping the tap detector mid-pinch enqueues the button release, but the queue only
+        // drains on orientation frames, which unbind() is about to stop — flush it directly so
+        // the host isn't left with a button held down until the next connect.
+        sensorListener.flush();
         connection.unbind();
     }
 
@@ -245,12 +257,17 @@ public class MouseController {
             flipDetector.stop();
             tapDetector.stop();
         } else {
-            if (settings.getBoolean(SettingKey.TAP_TO_CLICK) && tapDetector.isSupported()) {
-                tapDetector.start();
-            }
-            if (settings.getBoolean(SettingKey.FLIP_GESTURES) && flipDetector.isSupported()) {
-                flipDetector.start();
-            }
+            startDetectorsIfEnabled();
+        }
+    }
+
+    /** Starts the tap and flip detectors that are enabled in settings and supported on-device. */
+    private void startDetectorsIfEnabled() {
+        if (settings.getBoolean(SettingKey.TAP_TO_CLICK) && tapDetector.isSupported()) {
+            tapDetector.start();
+        }
+        if (settings.getBoolean(SettingKey.FLIP_GESTURES) && flipDetector.isSupported()) {
+            flipDetector.start();
         }
     }
 
@@ -282,11 +299,11 @@ public class MouseController {
         sensorListener.setReverseScroll(settings.getReverseScroll(getConnectedDeviceAddress()));
         service.startInput(sensorListener, settings.getBoolean(SettingKey.REDUCED_RATE));
 
-        if (settings.getBoolean(SettingKey.TAP_TO_CLICK) && tapDetector.isSupported()) {
-            tapDetector.start();
-        }
-        if (settings.getBoolean(SettingKey.FLIP_GESTURES) && flipDetector.isSupported()) {
-            flipDetector.start();
+        // The pointer mute survives an unbind/rebind (screen off/on, app switch): the paused flag
+        // lives on the sensorListener, not the service. Re-arming the detectors here while muted
+        // would let flips fire Back/Home from a "paused" pointer.
+        if (!sensorListener.isPaused()) {
+            startDetectorsIfEnabled();
         }
     }
 

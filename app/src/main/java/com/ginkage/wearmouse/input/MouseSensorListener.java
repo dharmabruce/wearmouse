@@ -377,15 +377,7 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      */
     void setPaused(boolean paused) {
         if (paused && !this.paused) {
-            synchronized (pendingEvents) {
-                pendingEvents.clear();
-            }
-            if (leftButtonPressed || rightButtonPressed || middleButtonPressed) {
-                leftButtonPressed = false;
-                rightButtonPressed = false;
-                middleButtonPressed = false;
-                dataSender.sendMouse(false, false, false, 0, 0, 0);
-            }
+            flush();
             synchronized (deltaLock) {
                 scrollMode = false;
             }
@@ -393,6 +385,27 @@ public class MouseSensorListener implements SensorService.OrientationListener {
             firstRead = true;
         }
         this.paused = paused;
+    }
+
+    /**
+     * Immediately release every button and discard queued button events, bypassing the queue's
+     * normal one-per-orientation-frame drain. The queue only drains while orientation frames
+     * arrive, so this must be called whenever those frames are about to stop with a press possibly
+     * in flight (pause, or the controller's onStop) — otherwise the host is left holding the
+     * button until the next connect.
+     */
+    void flush() {
+        boolean hadPending;
+        synchronized (pendingEvents) {
+            hadPending = !pendingEvents.isEmpty();
+            pendingEvents.clear();
+        }
+        if (hadPending || leftButtonPressed || rightButtonPressed || middleButtonPressed) {
+            leftButtonPressed = false;
+            rightButtonPressed = false;
+            middleButtonPressed = false;
+            dataSender.sendMouse(false, false, false, 0, 0, 0);
+        }
     }
 
     /** @return whether sensor-driven output is currently muted. */
