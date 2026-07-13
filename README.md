@@ -1,30 +1,54 @@
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/ginkage)
-[![paypal](https://www.paypalobjects.com/en_GB/i/btn/btn_donate_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=LF9S5WAF6E4VA)
+# WearMouse — tap-gesture fork
 
-# WearMouse
+A Wear OS **air mouse**: your watch becomes a Bluetooth HID mouse and keyboard for any
+computer or AR glasses (tested on the INMO Air 3), with no extra software on the host.
+This is a fork of [ginkage/WearMouse](https://github.com/ginkage/wearmouse) that adds
+hands-light IMU gesture control on top of the original air mouse.
 
-This project is a sample for the new Bluetooth HID Device API, which was
-introduced in Android P. It implements a simple air mouse and cursor keys
-emulation on a Wear OS device.
+> ⚠️ **Alpha/beta.** The gesture features below are new and were tuned on one person's
+> wrist and watch. They ship **off by default** and are marked *(beta)* in
+> Settings → Input. Turn them on one at a time, and please
+> [file an issue](https://github.com/dharmabruce/wearmouse/issues) if they misfire on
+> your hardware. Everything the upstream app already did still works unchanged.
 
-Note: This is not an officially supported Google product.
+## What this fork adds
 
-## Fork additions
+**Opt-in IMU gestures** (Settings → Input, off by default):
 
-This fork extends the upstream air mouse for hands-light use with AR glasses (tested on
-the INMO Air 3) driven from a Wear OS watch:
+* **Tap-to-click & grab-to-scroll** *(beta)* — pinch your fingers to click, double-tap to
+  double-click, tap-and-hold to drag, and pinch-and-move to scroll with macOS-style
+  release inertia. No touching the watch face to click.
+* **Wrist-flip Back / Home** *(beta)* — flip your wrist over and back to send Android
+  Back; hold it flipped for about a second for Home. Haptic feedback confirms each
+  gesture.
 
-* **IMU tap-to-click and grab-to-scroll** — pinch to click, pinch-and-move to scroll, with
-  macOS-style release inertia. No touching the watch face to click.
-* **Android Back and Home** — two entries in the mouse action drawer (swipe up) send the
-  Android navigation keys over HID (Consumer Control `AC Back`/`AC Home`), so you can
-  navigate the glasses without leaving the air mouse.
-* **Pause pointer** — a one-tap mute in the same drawer that freezes all pointer motion,
-  scrolling and clicks while you type on the host, then resumes instantly. The Bluetooth
-  link stays up, so there is no reconnect delay (unlike disconnecting).
+**Always available:**
+
+* **Back / Home / Pause in the action drawer** — swipe up on the mouse screen for entries
+  that send Android Back/Home over HID (Consumer Control `AC Back`/`AC Home`), plus a
+  one-tap **Pause** that freezes all pointer motion, scrolling and clicks while you type
+  on the host, then resumes instantly. The Bluetooth link stays up, so there is no
+  reconnect delay (unlike disconnecting).
 * **Per-device scroll direction** — the "Reverse scroll direction" setting is remembered
   per connected host, so the glasses and a laptop can each keep the direction that feels
   right; the global switch is the default new devices inherit.
+
+## Installing
+
+This fork uses its own application id — `com.ginkage.wearmouse.tap` — so it installs
+**alongside** the original Play Store WearMouse without conflicts (and does not receive
+its updates). Download an APK from the
+[Releases page](https://github.com/dharmabruce/wearmouse/releases) and sideload it to the
+watch with `adb install`, or build from source (see below). It is not on the Play Store.
+
+## Credits & license
+
+Based on [ginkage/WearMouse](https://github.com/ginkage/wearmouse), licensed under the
+Apache License 2.0 (see [LICENSE](LICENSE)); modifications are noted in the changed files.
+Not affiliated with, or endorsed by, Google or the original author. If the upstream app is
+useful to you, consider supporting its author:
+[Buy Me a Coffee](https://www.buymeacoffee.com/ginkage) ·
+[PayPal](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=LF9S5WAF6E4VA).
 
 ## Compatibility
 
