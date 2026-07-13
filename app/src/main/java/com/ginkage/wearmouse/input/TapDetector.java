@@ -27,6 +27,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
+import com.ginkage.wearmouse.BuildConfig;
 import androidx.annotation.MainThread;
 import androidx.annotation.Nullable;
 import java.util.Locale;
@@ -196,7 +197,7 @@ public class TapDetector implements SensorEventListener {
     private final Runnable safetyRelease =
             () -> {
                 if (pressed) {
-                    Log.d(TAG, "release safety-timeout drag=" + dragHold);
+                    if (BuildConfig.DEBUG) Log.d(TAG, "release safety-timeout drag=" + dragHold);
                     release();
                 }
             };
@@ -299,16 +300,16 @@ public class TapDetector implements SensorEventListener {
             if (jerk >= JERK_THRESHOLD && gyroSpeed < GYRO_GATE_RAD_S) {
                 final long sinceRelease = now - lastReleaseUptimeMs;
                 if (masked) {
-                    Log.d(TAG, String.format(Locale.US,
+                    if (BuildConfig.DEBUG) Log.d(TAG, String.format(Locale.US,
                             "press blocked (buzz mask) jerk=%.0f gyro=%.2f", jerk, gyroSpeed));
                 } else if (sinceRelease < HARD_REFRACTORY_MS) {
-                    Log.d(TAG, String.format(Locale.US,
+                    if (BuildConfig.DEBUG) Log.d(TAG, String.format(Locale.US,
                             "press blocked (dead-time %dms) jerk=%.0f gyro=%.2f",
                             sinceRelease, jerk, gyroSpeed));
                 } else if (sinceRelease < REARM_WINDOW_MS
                         && now - prevLoudUptimeMs < REARM_QUIET_GAP_MS) {
                     // Still ringing from the release — not a new tap until it goes quiet.
-                    Log.d(TAG, String.format(Locale.US,
+                    if (BuildConfig.DEBUG) Log.d(TAG, String.format(Locale.US,
                             "press blocked (ring %dms, loud %dms ago) jerk=%.0f gyro=%.2f",
                             sinceRelease, now - prevLoudUptimeMs, jerk, gyroSpeed));
                 } else {
@@ -318,7 +319,7 @@ public class TapDetector implements SensorEventListener {
                     restSinceUptimeMs = now;
                     handler.removeCallbacks(safetyRelease);
                     handler.postDelayed(safetyRelease, SAFETY_TIMEOUT_MS);
-                    Log.d(TAG, String.format(Locale.US,
+                    if (BuildConfig.DEBUG) Log.d(TAG, String.format(Locale.US,
                             "press jerk=%.0f gyro=%.2f sinceRelease=%dms quietGap=%dms",
                             jerk, gyroSpeed, sinceRelease, now - prevLoudUptimeMs));
                     listener.onPinchDown();
@@ -363,7 +364,7 @@ public class TapDetector implements SensorEventListener {
                             : (now - restSinceUptimeMs >= stillMs) ? "move-rest" : null;
         }
         if (releaseReason != null) {
-            Log.d(TAG, String.format(Locale.US,
+            if (BuildConfig.DEBUG) Log.d(TAG, String.format(Locale.US,
                     "release %s hold=%dms moved=%b drag=%b",
                     releaseReason, now - downUptimeMs, movedSincePinch, dragHold));
             release();

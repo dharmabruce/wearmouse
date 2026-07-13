@@ -5,11 +5,11 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.ginkage.wearmouse"
+        applicationId "com.ginkage.wearmouse.tap"
         minSdkVersion 34
         targetSdkVersion 34
-        versionCode 41
-        versionName "1.28"
+        versionCode 10001
+        versionName "1.27-tap1"
         externalNativeBuild {
             cmake {
                 arguments "-DANDROID_ARM_NEON=TRUE", "-DANDROID_TOOLCHAIN=clang"
@@ -26,6 +26,9 @@ android {
             abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
             stl "gnustl_static"
         }
+    }
+    buildFeatures {
+        buildConfig true
     }
     buildTypes {
         release {

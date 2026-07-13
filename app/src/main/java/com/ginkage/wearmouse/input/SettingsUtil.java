@@ -1,6 +1,10 @@
 /*
  * Copyright 2018 Google LLC All Rights Reserved.
  *
+ * Modified 2025-2026 by the WearMouse fork contributors: added IMU
+ * tap-to-click, grab-to-scroll, and wrist-flip Back/Home gestures
+ * (see git history for details).
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -68,9 +72,9 @@ public class SettingsUtil {
                     .put(SettingKey.REDUCED_RATE, false)
                     .put(SettingKey.STABILIZE, false)
                     .put(SettingKey.STAY_CONNECTED, false)
-                    .put(SettingKey.TAP_TO_CLICK, true)
+                    .put(SettingKey.TAP_TO_CLICK, false)
                     .put(SettingKey.REVERSE_SCROLL, false)
-                    .put(SettingKey.FLIP_GESTURES, true)
+                    .put(SettingKey.FLIP_GESTURES, false)
                     .build();
 
     private final SharedPreferences sharedPref;

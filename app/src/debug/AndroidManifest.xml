@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright 2018 Google LLC All Rights Reserved.
+
+  Modified 2025-2026 by the WearMouse fork contributors: the RecorderActivity
+  IMU capture tool is a debug-only tuning aid and is declared here so it is
+  merged into debug builds only, keeping it out of release APKs.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!-- Debug-only IMU recorder. Not in any menu; launch via:
+             adb shell am start -n com.ginkage.wearmouse/.ui.RecorderActivity -->
+        <activity
+            android:name=".ui.RecorderActivity"
+            android:exported="true"
+            />
+
+    </application>
+</manifest>

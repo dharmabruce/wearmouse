@@ -1,6 +1,10 @@
 /*
  * Copyright 2018 Google LLC All Rights Reserved.
  *
+ * Modified 2025-2026 by the WearMouse fork contributors: added IMU
+ * tap-to-click, grab-to-scroll, and wrist-flip Back/Home gestures
+ * (see git history for details).
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -123,7 +127,7 @@ class Constants {
 
     private static final String SDP_NAME = "Wear Input";
     private static final String SDP_DESCRIPTION = "Wear OS HID Device";
-    private static final String SDP_PROVIDER = "Google Inc.";
+    private static final String SDP_PROVIDER = "WearMouse";
     private static final int QOS_TOKEN_RATE = 800; // 9 bytes * 1000000 us / 11250 us
     private static final int QOS_TOKEN_BUCKET_SIZE = 9;
     private static final int QOS_PEAK_BANDWIDTH = 0;

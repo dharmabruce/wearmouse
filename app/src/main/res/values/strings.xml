@@ -2,6 +2,10 @@
 <!--
   Copyright 2018 Google LLC All Rights Reserved.
 
+  Modified 2025-2026 by the WearMouse fork contributors: added IMU
+  tap-to-click, grab-to-scroll, and wrist-flip Back/Home gestures
+  (see git history for details).
+
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
   You may obtain a copy of the License at
@@ -129,11 +133,11 @@
     <!-- Prompt for the user to wait while the gyroscope calibration is running [CHAR_LIMIT=24] -->
     <string name="setting_calibration_running">Calibrating\u2026</string>
     <!-- Name of the preference for enabling finger-tap detection as a mouse click -->
-    <string name="pref_settingTapToClick">Tap to click</string>
+    <string name="pref_settingTapToClick">Tap to click (beta)</string>
     <!-- Description of the preference for enabling finger-tap detection as a mouse click -->
     <string name="pref_settingTapToClick_summary">Tap your fingers to click; hold to drag</string>
     <!-- Name of the preference for enabling wrist-flip Back/Home gestures -->
-    <string name="pref_settingFlipGestures">Flip gestures</string>
+    <string name="pref_settingFlipGestures">Flip gestures (beta)</string>
     <!-- Description of the preference for enabling wrist-flip Back/Home gestures -->
     <string name="pref_settingFlipGestures_summary">Flip your wrist over and back for Back; hold flipped 1 second for Home</string>
     <!-- Name of the preference for reversing the grab-to-scroll direction -->
