@@ -84,8 +84,16 @@ public class MouseSensorListener implements SensorService.OrientationListener {
 
     private final MouseDataSender dataSender;
 
+    /**
+     * Guards the accumulated rotation/wheel residue (dYaw, dPitch, dWheel), the per-grab scroll
+     * meters, and the scroll/drag mode flags they travel with. The sensor thread consumes these in
+     * onOrientation() while the main thread injects motion (sendMouseMove) and toggles the modes.
+     */
+    private final Object deltaLock = new Object();
+
     private double yaw;
     private double pitch;
+    // Guarded by deltaLock.
     private double dYaw;
     private double dPitch;
     private double dWheel;
@@ -94,24 +102,24 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      * Whether this is the very first event we received after starting to listen or changing the
      * wrist mode.
      */
-    private boolean firstRead;
+    private volatile boolean firstRead;
 
     private boolean leftButtonPressed;
     private boolean rightButtonPressed;
     private boolean middleButtonPressed;
-    private @HandMode int handMode;
-    private boolean stabilize;
-    private boolean lefty;
+    private volatile @HandMode int handMode;
+    private volatile boolean stabilize;
+    private volatile boolean lefty;
     /** When true, flip the grab-to-scroll direction (natural scrolling). */
-    private boolean reverseScroll;
+    private volatile boolean reverseScroll;
     /** When true, drop all sensor-driven output (motion, scroll, clicks) — a pointer "mute". */
-    private boolean paused;
+    private volatile boolean paused;
 
     /**
      * When true, drop orientation input because a wrist-flip gesture is in flight — the flip is a
      * violent rotation that would otherwise smear the cursor across the screen.
      */
-    private boolean gestureSuppressed;
+    private volatile boolean gestureSuppressed;
 
     /**
      * Cursor displacement (pixels) that ends the drag dead zone. Tap wobble random-walks well
@@ -119,22 +127,32 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      */
     private static final double DRAG_DEADZONE_PIXELS = 30.0;
 
-    /** When true, wrist motion scrolls the wheel instead of moving the cursor (grab-to-scroll). */
+    /**
+     * When true, wrist motion scrolls the wheel instead of moving the cursor (grab-to-scroll).
+     * Guarded by deltaLock.
+     */
     private boolean scrollMode;
 
     /**
      * While true, the cursor is pinned until wrist motion accumulates past {@link
      * #DRAG_DEADZONE_PIXELS}. Used for the second pinch of a double-tap: the host must see zero
      * motion between the button-down and a quick release (else it cancels the double-click and
-     * starts a micro-drag), but a held pinch that sweeps must still become a real drag.
+     * starts a micro-drag), but a held pinch that sweeps must still become a real drag. Guarded by
+     * deltaLock.
      */
     private boolean dragDeadZone;
 
     /** Notified (on the sensor thread) when deliberate motion breaks the drag dead zone. */
-    @Nullable private Runnable deadZoneBreakListener;
-    /** Total wheel ticks emitted during the current grab, used to tell a tap from a scroll. */
+    @Nullable private volatile Runnable deadZoneBreakListener;
+    /**
+     * Total wheel ticks emitted during the current grab, used to tell a tap from a scroll. Guarded
+     * by deltaLock.
+     */
     private double scrollAccum;
-    /** Smoothed wheel ticks per frame; drives both the live scroll output and the inertia seed. */
+    /**
+     * Smoothed wheel ticks per frame; drives both the live scroll output and the inertia seed.
+     * Guarded by deltaLock.
+     */
     private double scrollVelocity;
 
     /** @param dataSender Interface to send Mouse data with. */
@@ -196,8 +214,10 @@ public class MouseSensorListener implements SensorService.OrientationListener {
             this.pitch = newPitch;
 
             // Accumulate the error locally.
-            this.dYaw += dYaw;
-            this.dPitch += dPitch;
+            synchronized (deltaLock) {
+                this.dYaw += dYaw;
+                this.dPitch += dPitch;
+            }
         }
 
         sendCurrentState();
@@ -209,8 +229,10 @@ public class MouseSensorListener implements SensorService.OrientationListener {
         firstRead = true;
         yaw = 0;
         pitch = 0;
-        dYaw = 0;
-        dPitch = 0;
+        synchronized (deltaLock) {
+            dYaw = 0;
+            dPitch = 0;
+        }
     }
 
     /**
@@ -239,9 +261,11 @@ public class MouseSensorListener implements SensorService.OrientationListener {
         if (paused) {
             return;
         }
-        dYaw += x / CURSOR_SPEED;
-        dPitch += y / CURSOR_SPEED;
-        dWheel += wheel;
+        synchronized (deltaLock) {
+            dYaw += x / CURSOR_SPEED;
+            dPitch += y / CURSOR_SPEED;
+            dWheel += wheel;
+        }
     }
 
     /**
@@ -252,11 +276,13 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      * @param on {@code true} to pin the cursor, {@code false} to release the pin.
      */
     void setDragDeadZone(boolean on) {
-        if (on && !dragDeadZone) {
-            dYaw = 0;
-            dPitch = 0;
+        synchronized (deltaLock) {
+            if (on && !dragDeadZone) {
+                dYaw = 0;
+                dPitch = 0;
+            }
+            dragDeadZone = on;
         }
-        dragDeadZone = on;
     }
 
     /**
@@ -275,25 +301,31 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      * @param on {@code true} to start grabbing, {@code false} to release.
      */
     void setScrollMode(boolean on) {
-        if (on && !scrollMode) {
-            scrollAccum = 0;
-            scrollVelocity = 0;
-            // Drop any pending rotation so the grab starts from a clean slate (no cursor jump and no
-            // stale pitch dumped into the first scroll frame).
-            dYaw = 0;
-            dPitch = 0;
+        synchronized (deltaLock) {
+            if (on && !scrollMode) {
+                scrollAccum = 0;
+                scrollVelocity = 0;
+                // Drop any pending rotation so the grab starts from a clean slate (no cursor jump
+                // and no stale pitch dumped into the first scroll frame).
+                dYaw = 0;
+                dPitch = 0;
+            }
+            scrollMode = on;
         }
-        scrollMode = on;
     }
 
     /** @return total wheel ticks scrolled since the current grab began (signed). */
     double getScrollAccum() {
-        return scrollAccum;
+        synchronized (deltaLock) {
+            return scrollAccum;
+        }
     }
 
     /** @return smoothed wheel velocity (ticks/frame) at this moment, for seeding inertia. */
     double getScrollVelocity() {
-        return scrollVelocity;
+        synchronized (deltaLock) {
+            return scrollVelocity;
+        }
     }
 
     /**
@@ -354,7 +386,9 @@ public class MouseSensorListener implements SensorService.OrientationListener {
                 middleButtonPressed = false;
                 dataSender.sendMouse(false, false, false, 0, 0, 0);
             }
-            scrollMode = false;
+            synchronized (deltaLock) {
+                scrollMode = false;
+            }
         } else if (!paused && this.paused) {
             firstRead = true;
         }
@@ -375,8 +409,10 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      */
     void setGestureSuppressed(boolean suppressed) {
         if (suppressed && !gestureSuppressed) {
-            dYaw = 0;
-            dPitch = 0;
+            synchronized (deltaLock) {
+                dYaw = 0;
+                dPitch = 0;
+            }
         } else if (!suppressed && gestureSuppressed) {
             firstRead = true;
         }
@@ -413,98 +449,116 @@ public class MouseSensorListener implements SensorService.OrientationListener {
      */
     private boolean sendCurrentState() {
         boolean overflow = false;
+        byte x = 0;
+        byte y = 0;
+        byte z = 0;
+        boolean pinned = false;
+        boolean deadZoneBroken = false;
 
-        if (dragDeadZone) {
-            // Pinned: accumulate motion to measure intent, but report none (buttons still drain).
-            // Signed accumulation lets tap wobble cancel itself out while a sweep adds up.
-            double pixels = Math.hypot(dYaw, dPitch) * CURSOR_SPEED;
-            if (pixels < DRAG_DEADZONE_PIXELS) {
-                sendData((byte) 0, (byte) 0, (byte) 0);
-                return false;
+        synchronized (deltaLock) {
+            if (dragDeadZone) {
+                // Pinned: accumulate motion to measure intent, but report none (buttons still
+                // drain). Signed accumulation lets tap wobble cancel itself out while a sweep adds
+                // up.
+                double pixels = Math.hypot(dYaw, dPitch) * CURSOR_SPEED;
+                if (pixels < DRAG_DEADZONE_PIXELS) {
+                    pinned = true;
+                } else {
+                    // Deliberate motion: it's a drag. Drop the pent-up wobble so the cursor glides
+                    // from where the button went down instead of jumping.
+                    dragDeadZone = false;
+                    dYaw = 0;
+                    dPitch = 0;
+                    deadZoneBroken = true;
+                }
             }
-            // Deliberate motion: it's a drag. Drop the pent-up wobble so the cursor glides from
-            // where the button went down instead of jumping.
-            dragDeadZone = false;
-            dYaw = 0;
-            dPitch = 0;
-            if (deadZoneBreakListener != null) {
-                deadZoneBreakListener.run();
+
+            if (!pinned) {
+                if (scrollMode) {
+                    // Grab-to-scroll: vertical wrist motion drives the wheel, cursor is frozen.
+                    // Tie the scroll to the exact displacement the cursor would have moved (in
+                    // pixels), then convert to the coarse wheel unit, so it feels like the cursor
+                    // is dragging the page. Negative sign so tilting the wrist the way you'd drag
+                    // the page scrolls it that way.
+                    double cursorPixels = dPitch * CURSOR_SPEED;
+                    // Default sign drags the page the way you tilt; reverseScroll flips it for
+                    // natural scrolling, where the wheel turns the opposite way.
+                    double direction = reverseScroll ? 1.0 : -1.0;
+                    double rawWheel = direction * cursorPixels / SCROLL_PIXELS_PER_TICK;
+                    // Low-pass the wheel rate so tremor and single-frame spikes don't become
+                    // bursty single ticks. The same smoothed value drives the live scroll and
+                    // seeds the release inertia, so the hand-off coasts seamlessly. It also gives
+                    // each grab a soft start, since the filter ramps up from zero (reset in
+                    // setScrollMode).
+                    scrollVelocity =
+                            SCROLL_SMOOTHING * scrollVelocity + (1 - SCROLL_SMOOTHING) * rawWheel;
+                    double wheelDelta = scrollVelocity;
+                    dWheel += wheelDelta;
+                    scrollAccum += wheelDelta;
+                    // Consume the rotation so it neither moves the cursor nor piles up for later.
+                    dYaw = 0;
+                    dPitch = 0;
+                }
+
+                double dX = dYaw * CURSOR_SPEED;
+                double dY = dPitch * CURSOR_SPEED;
+                double dZ = dWheel;
+
+                // Scale the shift down to fit the protocol.
+                if (dX > 127) {
+                    dY *= 127.0 / dX;
+                    dX = 127;
+                    overflow = true;
+                }
+                if (dX < -127) {
+                    dY *= -127.0 / dX;
+                    dX = -127;
+                    overflow = true;
+                }
+                if (dY > 127) {
+                    dX *= 127.0 / dY;
+                    dY = 127;
+                    overflow = true;
+                }
+                if (dY < -127) {
+                    dX *= -127.0 / dY;
+                    dY = -127;
+                    overflow = true;
+                }
+                if (dZ > 127) {
+                    dZ = 127;
+                    overflow = true;
+                }
+                if (dZ < -127) {
+                    dZ = -127;
+                    overflow = true;
+                }
+
+                x = (byte) Math.round(dX);
+                y = (byte) Math.round(dY);
+                z = (byte) Math.round(dZ);
+
+                // Only subtract the part of the error that was already sent.
+                if (x != 0) {
+                    dYaw -= x / CURSOR_SPEED;
+                }
+                if (y != 0) {
+                    dPitch -= y / CURSOR_SPEED;
+                }
+                if (z != 0) {
+                    dWheel -= z;
+                }
             }
         }
 
-        if (scrollMode) {
-            // Grab-to-scroll: vertical wrist motion drives the wheel, cursor is frozen. Tie the
-            // scroll to the exact displacement the cursor would have moved (in pixels), then convert
-            // to the coarse wheel unit, so it feels like the cursor is dragging the page. Negative
-            // sign so tilting the wrist the way you'd drag the page scrolls it that way.
-            double cursorPixels = dPitch * CURSOR_SPEED;
-            // Default sign drags the page the way you tilt; reverseScroll flips it for natural
-            // scrolling, where the wheel turns the opposite way.
-            double direction = reverseScroll ? 1.0 : -1.0;
-            double rawWheel = direction * cursorPixels / SCROLL_PIXELS_PER_TICK;
-            // Low-pass the wheel rate so tremor and single-frame spikes don't become bursty single
-            // ticks. The same smoothed value drives the live scroll and seeds the release inertia,
-            // so the hand-off coasts seamlessly. It also gives each grab a soft start, since the
-            // filter ramps up from zero (reset in setScrollMode).
-            scrollVelocity = SCROLL_SMOOTHING * scrollVelocity + (1 - SCROLL_SMOOTHING) * rawWheel;
-            double wheelDelta = scrollVelocity;
-            dWheel += wheelDelta;
-            scrollAccum += wheelDelta;
-            // Consume the rotation so it neither moves the cursor nor piles up for later.
-            dYaw = 0;
-            dPitch = 0;
+        if (deadZoneBroken) {
+            Runnable listener = deadZoneBreakListener;
+            if (listener != null) {
+                listener.run();
+            }
         }
 
-        double dX = dYaw * CURSOR_SPEED;
-        double dY = dPitch * CURSOR_SPEED;
-        double dZ = dWheel;
-
-        // Scale the shift down to fit the protocol.
-        if (dX > 127) {
-            dY *= 127.0 / dX;
-            dX = 127;
-            overflow = true;
-        }
-        if (dX < -127) {
-            dY *= -127.0 / dX;
-            dX = -127;
-            overflow = true;
-        }
-        if (dY > 127) {
-            dX *= 127.0 / dY;
-            dY = 127;
-            overflow = true;
-        }
-        if (dY < -127) {
-            dX *= -127.0 / dY;
-            dY = -127;
-            overflow = true;
-        }
-        if (dZ > 127) {
-            dZ = 127;
-            overflow = true;
-        }
-        if (dZ < -127) {
-            dZ = -127;
-            overflow = true;
-        }
-
-        final byte x = (byte) Math.round(dX);
-        final byte y = (byte) Math.round(dY);
-        final byte z = (byte) Math.round(dZ);
         sendData(x, y, z);
-
-        // Only subtract the part of the error that was already sent.
-        if (x != 0) {
-            dYaw -= x / CURSOR_SPEED;
-        }
-        if (y != 0) {
-            dPitch -= y / CURSOR_SPEED;
-        }
-        if (z != 0) {
-            dWheel -= z;
-        }
-
         return overflow;
     }
 
