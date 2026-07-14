@@ -72,9 +72,9 @@ public class SettingsUtil {
                     .put(SettingKey.REDUCED_RATE, false)
                     .put(SettingKey.STABILIZE, false)
                     .put(SettingKey.STAY_CONNECTED, false)
-                    .put(SettingKey.TAP_TO_CLICK, false)
+                    .put(SettingKey.TAP_TO_CLICK, true)
                     .put(SettingKey.REVERSE_SCROLL, false)
-                    .put(SettingKey.FLIP_GESTURES, false)
+                    .put(SettingKey.FLIP_GESTURES, true)
                     .build();
 
     private final SharedPreferences sharedPref;

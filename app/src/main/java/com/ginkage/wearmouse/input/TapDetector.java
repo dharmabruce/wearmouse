@@ -216,7 +216,10 @@ public class TapDetector implements SensorEventListener {
 
     /** @return {@code true} if this device exposes the sensor required for pinch detection. */
     public boolean isSupported() {
-        return linearAccel != null;
+        // The gyroscope is not optional: the press gate `gyroSpeed < GYRO_GATE_RAD_S` rejects taps
+        // during aiming rotation. Without a gyro, gyroSpeed stays 0, the gate always passes, and
+        // ordinary arm motion becomes phantom clicks — so report unsupported and stay off instead.
+        return linearAccel != null && gyroscope != null;
     }
 
     /** Begin listening. Safe to call repeatedly. */

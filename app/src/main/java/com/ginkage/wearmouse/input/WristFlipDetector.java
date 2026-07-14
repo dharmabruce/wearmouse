@@ -46,8 +46,9 @@ import androidx.annotation.Nullable;
  * round trip. The flip is a violent rotation that would otherwise smear the cursor.
  *
  * <p>Thresholds were tuned from recordings on the author's left wrist (see {@code
- * RecorderActivity}, 2026-07-10 logs); a right-wrist or rotated wearer likely flips the sign of gy
- * — re-record to re-tune.
+ * RecorderActivity}, 2026-07-10 logs). A flip swings gravity-Y strongly negative on a left wrist
+ * and strongly positive on a right wrist (a mirror image); the detector latches that direction on
+ * entry and normalizes it, so the same thresholds fire on either wrist with no configuration.
  */
 public class WristFlipDetector implements SensorEventListener {
 
@@ -140,6 +141,10 @@ public class WristFlipDetector implements SensorEventListener {
     private long invertedAtMs;
     private long lastEndMs;
 
+    /** Sign that normalizes gravity-Y to "negative on flip" for the current gesture, latched on
+     * entry (left wrist flips gy negative, right wrist positive) so one set of thresholds fits both. */
+    private float tiltSign = 1f;
+
     /**
      * @param context Context used to obtain the {@link SensorManager}.
      * @param listener Callback to receive flip gestures.
@@ -195,9 +200,15 @@ public class WristFlipDetector implements SensorEventListener {
             return;
         }
 
-        final float gy = event.values[1];
+        final float rawGy = event.values[1];
         final float gz = event.values[2];
         final long now = SystemClock.uptimeMillis();
+
+        // Normalize gravity-Y to the "negative on flip" convention the thresholds were tuned in.
+        // tiltSign is latched on entry (below): a left-wrist flip drives rawGy negative and a
+        // right-wrist flip drives it positive, so this makes both read the same. Only used once
+        // TILTING has begun; DISARMED/READY key off gz and rawGy directly.
+        final float gy = tiltSign * rawGy;
 
         switch (state) {
             case DISARMED:
@@ -207,7 +218,10 @@ public class WristFlipDetector implements SensorEventListener {
                 break;
 
             case READY:
-                if (gy < GY_SUPPRESS) {
+                // Enter on a roll in either direction. GY_SUPPRESS is negative, so -GY_SUPPRESS is
+                // its positive mirror; latch tiltSign so the rest of the gesture reads gy negative.
+                if (rawGy < GY_SUPPRESS || rawGy > -GY_SUPPRESS) {
+                    tiltSign = (rawGy < 0) ? 1f : -1f;
                     state = State.TILTING;
                     tiltStartMs = now;
                     peakGyro = gyroSpeed;
