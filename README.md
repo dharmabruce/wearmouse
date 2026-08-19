@@ -6,14 +6,16 @@ This is a fork of [ginkage/WearMouse](https://github.com/ginkage/wearmouse) that
 hands-light IMU gesture control on top of the original air mouse.
 
 > ⚠️ **Alpha/beta.** The gesture features below are new and were tuned on one person's
-> wrist and watch. They ship **off by default** and are marked *(beta)* in
-> Settings → Input. Turn them on one at a time, and please
-> [file an issue](https://github.com/dharmabruce/wearmouse/issues) if they misfire on
-> your hardware. Everything the upstream app already did still works unchanged.
+> wrist and watch. They are **on by default** and marked *(beta)* in
+> Settings → Input — if they misfire on your hardware, toggle them off individually
+> there, and please
+> [file an issue](https://github.com/dharmabruce/wearmouse/issues) so they can be tuned.
+> Everything the upstream app already did still works unchanged.
 
 ## What this fork adds
 
-**Opt-in IMU gestures** (Settings → Input, off by default):
+**IMU gestures** (Settings → Input, on by default, individually toggleable; they need a
+gyroscope and stay inactive on watches without one):
 
 * **Tap-to-click & grab-to-scroll** *(beta)* — pinch your fingers to click, double-tap to
   double-click, tap-and-hold to drag, and pinch-and-move to scroll with macOS-style
@@ -39,7 +41,8 @@ This fork uses its own application id — `com.ginkage.wearmouse.tap` — so it 
 **alongside** the original Play Store WearMouse without conflicts (and does not receive
 its updates). Download an APK from the
 [Releases page](https://github.com/dharmabruce/wearmouse/releases) and sideload it to the
-watch with `adb install`, or build from source (see below). It is not on the Play Store.
+watch with `adb install` — **[INSTALL.md](INSTALL.md) has a step-by-step guide** — or
+build from source (see below). It is not on the Play Store.
 
 ## Credits & license
 
@@ -52,7 +55,8 @@ useful to you, consider supporting its author:
 
 ## Compatibility
 
-This app is only compatible with Wear OS devices running Android P and above.
+This fork is only compatible with Wear OS devices running Wear OS 5 (Android 14) and
+above.
 You can use it to connect with pretty much any laptop or desktop computer,
 running Windows, Linux, Chrome OS, Mac OSX, Android TV, without any additional
 software, as long as it has a Bluetooth receiver.
